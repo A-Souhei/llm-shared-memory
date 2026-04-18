@@ -67,7 +67,7 @@ async def ingest_files(req: IngestRequest) -> StartResponse:
                 errors.append(f"{f.path}:{chunk.start_line}: {exc}")
 
     # Delete chunks for files that no longer exist (requires all_paths from client)
-    if req.all_paths:
+    if req.all_paths is not None:
         current = set(req.all_paths)
         for old_path in set(known_mtimes) - current:
             n = await store.redis.delete_by_path(req.project_id, old_path)

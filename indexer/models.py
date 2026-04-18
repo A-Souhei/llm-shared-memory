@@ -18,8 +18,8 @@ class FileInput(BaseModel):
 
 class IngestRequest(BaseModel):
     project_id: str
-    files: list[FileInput]      # new or changed files (with content)
-    all_paths: list[str] = []   # all current paths — enables deletion detection
+    files: list[FileInput]              # new or changed files (with content)
+    all_paths: list[str] | None = None  # all current paths — enables deletion detection; None = skip
 
 
 class StartRequest(BaseModel):

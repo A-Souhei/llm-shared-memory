@@ -111,17 +111,22 @@ PYEOF
 
 # ── one scan cycle ────────────────────────────────────────────────────────────
 scan() {
-  local payload n_files result
+  local payload n_files n_paths result
   payload=$(build_payload) || { err "Failed to scan files"; return 1; }
 
   n_files=$(echo "$payload" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['files']))")
+  n_paths=$(echo "$payload" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['all_paths']))")
 
-  if [[ "$n_files" -eq 0 ]]; then
-    log "No changes"
+  if [[ "$n_paths" -eq 0 ]]; then
+    log "No indexable files found"
     return 0
   fi
 
-  log "Sending $n_files changed file(s)..."
+  if [[ "$n_files" -eq 0 ]]; then
+    log "No changes — sending all_paths for deletion check"
+  else
+    log "Sending $n_files changed file(s)..."
+  fi
 
   result=$(echo "$payload" | curl -sf -X POST "$BIBLION_URL/indexer/ingest" \
     -H "Content-Type: application/json" -d @-) || { err "Ingest request failed — will retry"; return 1; }
