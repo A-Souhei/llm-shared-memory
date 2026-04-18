@@ -4,6 +4,7 @@ import uvicorn
 from biblion.config import HOST, PORT
 from biblion.core import biblion as core
 from biblion.routes.biblion import router
+from biblion.bridge.routes import router as bridge_router
 from indexer.routes.indexer import router as indexer_router
 from indexer.core import indexer as indexer_core
 
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Biblion", description="Semantic knowledge base", lifespan=lifespan)
 app.include_router(router)
+app.include_router(bridge_router)
 app.include_router(indexer_router)
 
 
