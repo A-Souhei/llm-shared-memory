@@ -1,8 +1,10 @@
 import { homedir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
+import { randomBytes } from "crypto";
 
 export const BASE_URL = process.env.BIBLION_API_URL ?? "http://localhost:18765";
+const TIMEOUT_MS = 30_000;
 
 async function request(method: "GET" | "POST", path: string, body?: unknown, params?: Record<string, string>): Promise<unknown> {
   const url = new URL(path, BASE_URL);
@@ -11,13 +13,23 @@ async function request(method: "GET" | "POST", path: string, body?: unknown, par
       if (v != null) url.searchParams.set(k, v);
     }
   }
-  const res = await fetch(url.toString(), {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${res.statusText}`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url.toString(), {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${res.statusText}`);
+    return res.json();
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw new Error(`${method} ${path} timed out after ${TIMEOUT_MS / 1000}s`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function getJson(path: string, params?: Record<string, string>): Promise<unknown> {
@@ -38,7 +50,7 @@ export function loadSessionId(): string {
 }
 
 export function saveSessionId(id: string): void {
-  mkdirSync(join(homedir(), ".biblion"), { recursive: true });
+  mkdirSync(dirname(SESSION_FILE), { recursive: true });
   writeFileSync(SESSION_FILE, id);
 }
 
@@ -47,7 +59,7 @@ export function clearSessionId(): void {
 }
 
 export function newSessionId(): string {
-  return "ses_" + Math.random().toString(36).slice(2, 14).padEnd(12, "0");
+  return "ses_" + randomBytes(6).toString("hex");
 }
 
 export async function resolveSession(): Promise<{ bridgeId: string; sessionId: string }> {

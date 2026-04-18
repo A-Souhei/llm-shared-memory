@@ -287,9 +287,11 @@ server.tool(
     project_id: z.string().describe("Project identifier for this codebase."),
   },
   async ({ directory, project_id }) => {
-    const { readdirSync, statSync, readFileSync: rfs } = await import("fs");
-    const { execSync } = await import("child_process");
+    const { readdir, stat, readFile } = await import("fs/promises");
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
     const path = await import("path");
+    const execFileAsync = promisify(execFile);
 
     const EXTENSIONS = new Set([".py",".ts",".tsx",".js",".jsx",".go",".rs",".java",".c",".cpp",".h",".hpp",".cs",".rb",".swift",".kt",".md",".txt",".yaml",".yml",".toml",".json",".sh"]);
     const SKIP_DIRS = new Set(["node_modules","__pycache__",".venv","venv",".mypy_cache",".pytest_cache","dist","build",".next","target"]);
@@ -297,18 +299,19 @@ server.tool(
 
     let relPaths: string[] = [];
     try {
-      const repoRoot = execSync("git rev-parse --show-toplevel", { cwd: directory, timeout: 10000 }).toString().trim();
-      const output = execSync("git ls-files --cached --others --exclude-standard -z", { cwd: directory, timeout: 10000 }).toString();
-      relPaths = output.split("\0").filter(Boolean).map(p => {
+      const { stdout: rootOut } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: directory, timeout: 10000 });
+      const repoRoot = rootOut.trim();
+      const { stdout } = await execFileAsync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: directory, timeout: 10000 });
+      relPaths = stdout.split("\0").filter(Boolean).map(p => {
         try { return path.relative(directory, path.resolve(repoRoot, p)); } catch { return ""; }
       }).filter(Boolean);
     } catch {
-      const walk = (dir: string): string[] => {
+      const walk = async (dir: string): Promise<string[]> => {
         const results: string[] = [];
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
           if (entry.isDirectory()) {
             if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith(".")) {
-              results.push(...walk(path.join(dir, entry.name)));
+              results.push(...await walk(path.join(dir, entry.name)));
             }
           } else {
             results.push(path.relative(directory, path.join(dir, entry.name)));
@@ -316,19 +319,20 @@ server.tool(
         }
         return results;
       };
-      relPaths = walk(directory);
+      relPaths = await walk(directory);
     }
 
     const files: { path: string; content: string; mtime: number }[] = [];
-    for (const rel of relPaths) {
-      if (!EXTENSIONS.has(path.extname(rel).toLowerCase())) continue;
+    await Promise.all(relPaths.map(async rel => {
+      if (!EXTENSIONS.has(path.extname(rel).toLowerCase())) return;
       const abs = path.join(directory, rel);
       try {
-        const st = statSync(abs);
-        if (st.size > MAX_BYTES) continue;
-        files.push({ path: rel, content: rfs(abs, "utf8"), mtime: st.mtimeMs });
+        const st = await stat(abs);
+        if (st.size > MAX_BYTES) return;
+        const content = await readFile(abs, "utf8");
+        files.push({ path: rel, content, mtime: st.mtimeMs });
       } catch { /* skip unreadable */ }
-    }
+    }));
 
     if (!files.length) return ok(`No indexable files found in ${directory}.`);
 
