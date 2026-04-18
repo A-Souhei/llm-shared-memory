@@ -24,3 +24,6 @@ DEFAULT_QUALITY: float = float(os.environ.get("DEFAULT_QUALITY", "0.5"))
 # Server
 HOST: str = os.environ.get("HOST", "0.0.0.0")
 PORT: int = int(os.environ.get("PORT", "18765"))
+
+# Slack
+SLACK_WEBHOOK_URL: str = os.environ.get("SLACK_WEBHOOK_URL", "")

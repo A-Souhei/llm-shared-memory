@@ -26,6 +26,28 @@ interface StatusData {
   indexer: IndexerStatus
 }
 
+interface NodeInfo {
+  nodeID: string
+  role: 'master' | 'friend'
+  sessionID: string
+  slug: string
+  title: string
+  directory: string
+  nodeURL: string
+  heartbeat: number
+  status: 'active' | 'inactive' | 'stale'
+  project_id: string
+}
+
+interface BridgeInfo {
+  bridgeID: string
+  masterID: string
+  masterSlug: string
+  nodes: NodeInfo[]
+  limit: number
+  createdAt: number
+}
+
 interface ProjectData {
   projectId: string
   biblionCount: number
@@ -68,9 +90,10 @@ const TYPE_COLORS: Record<string, string> = {
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [tab, setTab] = useState<'projects' | 'search'>('projects')
+  const [tab, setTab] = useState<'projects' | 'bridge' | 'search'>('projects')
   const [status, setStatus] = useState<StatusData | null>(null)
   const [projects, setProjects] = useState<ProjectData[]>([])
+  const [bridges, setBridges] = useState<BridgeInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
@@ -86,12 +109,14 @@ export default function Home() {
   const fetchData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
     try {
-      const [sRes, pRes] = await Promise.all([
+      const [sRes, pRes, bRes] = await Promise.all([
         fetch('/api/status'),
         fetch('/api/projects'),
+        fetch('/api/bridge'),
       ])
       if (sRes.ok) setStatus(await sRes.json())
       if (pRes.ok) setProjects(await pRes.json())
+      if (bRes.ok) setBridges(await bRes.json())
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -163,17 +188,22 @@ export default function Home() {
 
       {/* Tabs */}
       <nav className="bg-white border-b px-6 flex">
-        {(['projects', 'search'] as const).map(t => (
+        {(['projects', 'bridge', 'search'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-3 text-sm font-medium capitalize border-b-2 transition-colors ${
+            className={`px-4 py-3 text-sm font-medium capitalize border-b-2 transition-colors flex items-center gap-1.5 ${
               tab === t
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
             {t}
+            {t === 'bridge' && bridges.length > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${tab === 'bridge' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                {bridges.length}
+              </span>
+            )}
           </button>
         ))}
       </nav>
@@ -198,6 +228,14 @@ export default function Home() {
                 () => clearIndex(id),
               )
             }
+          />
+        )}
+        {tab === 'bridge' && (
+          <BridgeTab
+            bridges={bridges}
+            loading={loading}
+            refreshing={refreshing}
+            onRefresh={() => fetchData(true)}
           />
         )}
         {tab === 'search' && <SearchTab projects={projects} addToast={addToast} />}
@@ -608,5 +646,167 @@ function IndexerCard({ result: r }: { result: IndexerResult }) {
         {r.text.length > 600 ? r.text.slice(0, 600) + '…' : r.text}
       </pre>
     </div>
+  )
+}
+
+// ─── BridgeTab ──────────────────────────────────────────────────────────────────
+
+const NODE_STATUS_COLORS: Record<string, string> = {
+  active:   'bg-green-100 text-green-700',
+  stale:    'bg-gray-100 text-gray-500',
+  inactive: 'bg-red-100 text-red-600',
+}
+
+function BridgeTab({
+  bridges,
+  loading,
+  refreshing,
+  onRefresh,
+}: {
+  bridges: BridgeInfo[]
+  loading: boolean
+  refreshing: boolean
+  onRefresh: () => void
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+        Loading…
+      </div>
+    )
+  }
+
+  const byProject = bridges.reduce<Record<string, BridgeInfo[]>>((acc, b) => {
+    const master = b.nodes.find(n => n.role === 'master')
+    const proj = master?.project_id || '(unknown)'
+    acc[proj] = acc[proj] ?? []
+    acc[proj].push(b)
+    return acc
+  }, {})
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex gap-6 text-sm text-gray-600">
+          <span>
+            <span className="font-semibold text-gray-800">{bridges.length}</span> active bridge{bridges.length !== 1 ? 's' : ''}
+          </span>
+          <span>
+            <span className="font-semibold text-gray-800">
+              {bridges.reduce((s, b) => s + b.nodes.filter(n => n.role === 'friend').length, 0)}
+            </span> friends connected
+          </span>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-40 font-medium"
+        >
+          {refreshing ? 'Refreshing…' : '↻ Refresh'}
+        </button>
+      </div>
+
+      {bridges.length === 0 ? (
+        <div className="bg-white rounded-xl border p-10 text-center text-gray-400 text-sm">
+          No active bridges. Start opencode with{' '}
+          <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-xs">--bridge master</code>{' '}
+          and register via <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-xs">POST /bridge/set-master</code>.
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(byProject).map(([project, bList]) => (
+            <div key={project}>
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 font-mono">
+                {project}
+              </h2>
+              <div className="space-y-3">
+                {bList.map(b => <BridgeCard key={b.bridgeID} bridge={b} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
+  const master = b.nodes.find(n => n.role === 'master')
+  const friends = b.nodes.filter(n => n.role === 'friend')
+  const now = Date.now()
+
+  const age = master ? Math.round((now - master.heartbeat) / 1000) : null
+
+  return (
+    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+      {/* Master row */}
+      <div className="px-5 py-4 border-b bg-slate-50 flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Master</span>
+            {b.masterSlug && (
+              <span className="text-xs font-mono text-slate-400">{b.masterSlug}</span>
+            )}
+          </div>
+          <div className="font-mono text-sm text-gray-800 truncate">{master?.title || b.bridgeID}</div>
+          <div className="text-xs text-gray-400 font-mono mt-0.5 truncate">{master?.directory}</div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <NodeStatusBadge status={master?.status ?? 'active'} />
+          {age !== null && (
+            <span className={`text-xs ${age > 45 ? 'text-amber-500' : 'text-gray-400'}`}>
+              ♥ {age}s ago
+            </span>
+          )}
+          <span className="text-xs text-gray-300 font-mono">{b.limit - b.nodes.length} slot{b.limit - b.nodes.length !== 1 ? 's' : ''} free</span>
+        </div>
+      </div>
+
+      {/* Friends */}
+      {friends.length === 0 ? (
+        <div className="px-5 py-3 text-xs text-gray-300 italic">No friends connected</div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {friends.map(f => {
+            const friendAge = Math.round((now - f.heartbeat) / 1000)
+            return (
+              <div key={f.nodeID} className="px-5 py-3 flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs font-medium text-blue-500">Friend</span>
+                    {f.slug && <span className="text-xs text-gray-400 font-mono">{f.slug}</span>}
+                  </div>
+                  <div className="text-sm text-gray-700 truncate">{f.title || f.nodeID}</div>
+                  <div className="text-xs text-gray-400 font-mono mt-0.5 truncate">{f.directory}</div>
+                </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <NodeStatusBadge status={f.status} />
+                  <span className={`text-xs ${friendAge > 45 ? 'text-amber-500' : 'text-gray-400'}`}>
+                    ♥ {friendAge}s ago
+                  </span>
+                  {f.nodeURL && (
+                    <span className="text-xs text-gray-300 font-mono truncate max-w-40">{f.nodeURL}</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Bridge ID footer */}
+      <div className="px-5 py-2 bg-gray-50 border-t">
+        <span className="text-xs text-gray-300 font-mono">{b.bridgeID}</span>
+      </div>
+    </div>
+  )
+}
+
+function NodeStatusBadge({ status }: { status: string }) {
+  const cls = NODE_STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-500'
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
+      {status}
+    </span>
   )
 }
