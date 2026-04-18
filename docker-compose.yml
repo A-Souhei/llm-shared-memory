@@ -48,6 +48,19 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  webui:
+    build: ./webui
+    image: biblion-webui:latest
+    profiles: [webui]
+    restart: unless-stopped
+    ports:
+      - "18766:18766"
+    environment:
+      BIBLION_API_URL: "http://biblion:18765"
+      PORT: "18766"
+    depends_on:
+      - biblion
+
 volumes:
   qdrant_data:
   ollama_data:

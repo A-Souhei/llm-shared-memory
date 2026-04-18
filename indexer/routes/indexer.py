@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 
 from indexer.models import (
     IndexerStatus,
+    IndexerProjectStats,
     IngestRequest,
     StartResponse,
     SearchRequest,
@@ -10,6 +11,7 @@ from indexer.models import (
     ClearRequest,
 )
 from indexer.core import indexer as core
+from indexer.storage import redis as store
 
 router = APIRouter(prefix="/indexer", tags=["indexer"])
 
@@ -39,6 +41,13 @@ async def search(req: SearchRequest) -> SearchResponse:
         top_k=req.top_k,
         min_score=req.min_score,
     )
+
+
+@router.get("/projects", response_model=list[IndexerProjectStats])
+async def list_projects() -> list[IndexerProjectStats]:
+    """List all indexed projects with chunk and file counts."""
+    rows = await store.list_projects_with_counts()
+    return [IndexerProjectStats(**r) for r in rows]
 
 
 @router.delete("/clear", response_model=dict)

@@ -10,6 +10,12 @@ class IndexerStatus(BaseModel):
     projects: list[str] = Field(default_factory=list)
 
 
+class IndexerProjectStats(BaseModel):
+    project_id: str
+    chunk_count: int
+    file_count: int
+
+
 class FileInput(BaseModel):
     path: str       # relative path within the project
     content: str

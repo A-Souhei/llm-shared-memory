@@ -252,6 +252,24 @@ test_search_unknown_project() {
     || fail "unexpected results ($COUNT)"
 }
 
+test_projects() {
+  echo "GET /indexer/projects (after ingest)"
+  R=$(curl -sf "$BASE/indexer/projects")
+  HAS=$(echo "$R" | jget "any(p['project_id'] == '$PROJECT' for p in d)")
+  [[ "$HAS" == "True" ]] \
+    && pass "project '$PROJECT' listed" \
+    || fail "project not found in /indexer/projects" "$R"
+  PROJ=$(echo "$R" | jget "next(p for p in d if p['project_id'] == '$PROJECT')")
+  CHUNKS=$(echo "$R" | jget "next(p for p in d if p['project_id'] == '$PROJECT')['chunk_count']")
+  FILES=$(echo "$R"  | jget "next(p for p in d if p['project_id'] == '$PROJECT')['file_count']")
+  [[ "$CHUNKS" -gt 0 ]] \
+    && pass "chunk_count=$CHUNKS > 0" \
+    || fail "chunk_count is 0 or missing" "$R"
+  [[ "$FILES" -gt 0 ]] \
+    && pass "file_count=$FILES > 0" \
+    || fail "file_count is 0 or missing" "$R"
+}
+
 test_clear() {
   echo "DELETE /indexer/clear"
   R=$(curl -sf -X DELETE "$BASE/indexer/clear" \
@@ -286,6 +304,7 @@ test_ingest_deletion_detection; echo ""
 test_search;                  echo ""
 test_search_top_k;            echo ""
 test_search_unknown_project;  echo ""
+test_projects;                echo ""
 test_clear;                   echo ""
 
 echo "========================================"
