@@ -52,7 +52,7 @@ async def ensure_collection(dim: int) -> None:
         pass
 
     schema = (
-        TextField("id"),
+        TextField("entry_id"),
         TagField("type"),
         TextField("content"),
         TagField("tags", separator=","),
@@ -86,7 +86,7 @@ async def upsert(points: list[dict]) -> None:
         vector = point["vector"]
         payload = point.get("payload", {})
 
-        vec_bytes = struct.pack(f"{len(vector)}f", *vector)
+        vec_bytes = struct.pack(f"<{len(vector)}f", *vector)
 
         # Flatten tags list to comma-separated string for TAG field
         tags = payload.get("tags", [])
@@ -96,7 +96,7 @@ async def upsert(points: list[dict]) -> None:
             tags_str = str(tags)
 
         mapping: dict[str, Any] = {
-            "id": point_id,
+            "entry_id": point_id,
             "type": payload.get("type", ""),
             "content": payload.get("content", ""),
             "tags": tags_str,
@@ -121,7 +121,7 @@ def _doc_to_hit(doc: Any) -> dict:
     tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
     payload = {
-        "id": _str(getattr(doc, "id_field", "") or getattr(doc, "id", "")),
+        "id": _str(getattr(doc, "entry_id", "")),
         "type": _str(getattr(doc, "type", "")),
         "content": _str(getattr(doc, "content", "")),
         "tags": tags,
@@ -133,15 +133,11 @@ def _doc_to_hit(doc: Any) -> dict:
         "created_at": _str(getattr(doc, "created_at", "")),
         "updated_at": _str(getattr(doc, "updated_at", "")),
     }
-    # The "id" stored in the hash field — fall back to doc.id (the Redis key)
     if not payload["id"]:
+        # Fallback: strip the known prefix from the Redis key to get the UUID
         key = _str(doc.id)
-        # strip the point key prefix to get the UUID
         prefix = f"{config.COLLECTION_NAME}:point:"
-        if key.startswith(prefix):
-            payload["id"] = key[len(prefix):]
-        else:
-            payload["id"] = key
+        payload["id"] = key[len(prefix):] if key.startswith(prefix) else key
     return payload
 
 
@@ -160,7 +156,7 @@ async def search(
     else:
         query_str = f"*=>[KNN {top_k} @vector $vec AS score]"
 
-    fields = ["id", "type", "content", "tags", "project_id", "branch",
+    fields = ["entry_id", "type", "content", "tags", "project_id", "branch",
               "session_id", "quality", "used_count", "created_at", "updated_at", "score"]
 
     q = (
@@ -194,7 +190,7 @@ async def scroll_all(project_id: str = "") -> list[dict]:
     else:
         query_str = "*"
 
-    fields = ["id", "type", "content", "tags", "project_id", "branch",
+    fields = ["entry_id", "type", "content", "tags", "project_id", "branch",
               "session_id", "quality", "used_count", "created_at", "updated_at"]
 
     page_size = 100
@@ -282,7 +278,9 @@ async def count() -> int:
     r = _get_client()
     try:
         info = await r.ft(_index_name()).info()
-        return int(info.get("num_docs", 0))
+        # decode_responses=False → keys may be bytes
+        val = info.get("num_docs") or info.get(b"num_docs") or 0
+        return int(val)
     except Exception:
         return 0
 

@@ -214,7 +214,7 @@ async def list_projects() -> list[str]:
 
 def _escape_tag(value: str) -> str:
     """Escape special chars for RediSearch TAG queries."""
-    special = r'.,<>{}\[\]\"\':;!@#$%^&*()\-+=~'
+    special = r'.,<>{}\[\]\"\':;!@#$%^&*()\-+=~/ '
     for ch in special:
         value = value.replace(ch, f"\\{ch}")
     return value

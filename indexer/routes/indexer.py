@@ -43,5 +43,8 @@ async def search(req: SearchRequest) -> SearchResponse:
 
 @router.delete("/clear", response_model=dict)
 async def clear(req: ClearRequest) -> dict:
+    healthy = await core.get_status()
+    if healthy.status != "ok":
+        raise HTTPException(status_code=503, detail="Indexer backend unavailable")
     n = await core.clear(req.project_id)
     return {"project_id": req.project_id, "deleted": n}
