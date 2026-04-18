@@ -101,16 +101,27 @@ async def delete_by_path(project_id: str, file_path: str) -> int:
     """Delete all chunks for a given file path. Returns number of deleted keys."""
     r = _get_client()
     idx = _index_name(project_id)
-    # Search for all chunks with this file_path
     try:
-        q = Query(f"@file_path:{{{_escape_tag(file_path)}}}").return_fields("__key").no_content().paging(0, 10000)
+        q = Query(f"@file_path:{{{_escape_tag(file_path)}}}").no_content().paging(0, 10000)
         results = await r.ft(idx).search(q)
         keys = [doc.id for doc in results.docs]
     except Exception:
+        logger.warning("delete_by_path query failed for %s/%s, falling back to scan", project_id, file_path)
         keys = []
+    if not keys:
+        # Fallback: scan all point keys and match by file_path field
+        prefix = f"{REDIS_KEY_PREFIX}_{project_id}:point:"
+        cursor = 0
+        while True:
+            cursor, batch = await r.scan(cursor, match=f"{prefix}*", count=500)
+            for k in batch:
+                val = await r.hget(k, "file_path")
+                if val and (val.decode() if isinstance(val, bytes) else val) == file_path:
+                    keys.append(k)
+            if cursor == 0:
+                break
     if keys:
         await r.delete(*keys)
-    # Remove from mtime cache
     await r.zrem(_mtime_key(project_id), file_path)
     return len(keys)
 

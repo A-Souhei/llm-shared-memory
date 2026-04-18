@@ -10,6 +10,18 @@ class IndexerStatus(BaseModel):
     projects: list[str] = Field(default_factory=list)
 
 
+class FileInput(BaseModel):
+    path: str       # relative path within the project
+    content: str
+    mtime: float    # ms since epoch (st_mtime_ns / 1e6)
+
+
+class IngestRequest(BaseModel):
+    project_id: str
+    files: list[FileInput]      # new or changed files (with content)
+    all_paths: list[str] = []   # all current paths — enables deletion detection
+
+
 class StartRequest(BaseModel):
     project_id: str
     source_dir: str

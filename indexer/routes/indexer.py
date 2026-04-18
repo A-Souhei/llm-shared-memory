@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 
 from indexer.models import (
     IndexerStatus,
-    StartRequest,
+    IngestRequest,
     StartResponse,
     SearchRequest,
     SearchResponse,
@@ -19,12 +19,13 @@ async def status() -> IndexerStatus:
     return await core.get_status()
 
 
-@router.post("/start", response_model=StartResponse)
-async def start(req: StartRequest) -> StartResponse:
+@router.post("/ingest", response_model=StartResponse)
+async def ingest(req: IngestRequest) -> StartResponse:
+    """Index file content sent by the client. No filesystem access needed."""
     healthy = await core.get_status()
     if healthy.status != "ok":
         raise HTTPException(status_code=503, detail="Indexer backend unavailable")
-    return await core.start_indexing(req.project_id, req.source_dir)
+    return await core.ingest_files(req)
 
 
 @router.post("/search", response_model=SearchResponse)

@@ -11,7 +11,7 @@ from indexer.config import (
     REDIS_URL,
 )
 from indexer.chunker import chunk_file
-from indexer.models import IndexerStatus, StartResponse, SearchResult, SearchResponse
+from indexer.models import IndexerStatus, StartResponse, SearchResult, SearchResponse, IngestRequest
 from indexer import storage as store
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,52 @@ async def get_status() -> IndexerStatus:
         return IndexerStatus(status="disabled", reason="redis_unreachable", redis_url=REDIS_URL)
     projects = await store.redis.list_projects()
     return IndexerStatus(status="ok", redis_url=REDIS_URL, projects=projects)
+
+
+async def ingest_files(req: IngestRequest) -> StartResponse:
+    """Index files whose content is provided by the caller (no filesystem access)."""
+    from biblion.embedding import embed
+
+    await store.redis.ensure_index(req.project_id)
+    known_mtimes = await store.redis.get_all_mtimes(req.project_id)
+
+    indexed = skipped = deleted = 0
+    errors: list[str] = []
+
+    for f in req.files:
+        if f.path in known_mtimes and known_mtimes[f.path] == f.mtime:
+            skipped += 1
+            continue
+
+        await store.redis.delete_by_path(req.project_id, f.path)
+
+        chunks = chunk_file(f.content, f.path)
+        if not chunks:
+            skipped += 1
+            continue
+
+        for chunk in chunks:
+            try:
+                vector = await embed(chunk.text)
+                await store.redis.upsert(req.project_id, chunk, vector, f.mtime)
+                indexed += 1
+            except Exception as exc:
+                errors.append(f"{f.path}:{chunk.start_line}: {exc}")
+
+    # Delete chunks for files that no longer exist (requires all_paths from client)
+    if req.all_paths:
+        current = set(req.all_paths)
+        for old_path in set(known_mtimes) - current:
+            n = await store.redis.delete_by_path(req.project_id, old_path)
+            deleted += n
+
+    return StartResponse(
+        project_id=req.project_id,
+        indexed=indexed,
+        skipped=skipped,
+        deleted=deleted,
+        errors=errors,
+    )
 
 
 async def start_indexing(project_id: str, source_dir: str) -> StartResponse:
