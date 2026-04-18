@@ -348,17 +348,15 @@ async def biblion_list(project_id: str = "", type: str = "") -> str:
         project_id: Filter to a specific project, or leave empty for all.
         type: Filter by entry type (structure, pattern, dependency, api, config, workflow).
     """
-    params: dict = {}
-    if project_id:
-        params["project_id"] = project_id
-    if type:
-        params["type"] = type
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    path = f"/biblion/list?{query}" if query else "/biblion/list"
-    entries = await client.get_json(path)
+    entries = await client.get_json(
+        "/biblion/list",
+        project_id=project_id or None,
+        type=type or None,
+    )
     if not entries:
         return "No entries found."
-    lines = [f"{len(entries)} entry/entries:"]
+    count = len(entries)
+    lines = [f"{count} {'entry' if count == 1 else 'entries'}:"]
     for e in entries:
         lines.append(
             f"  [{e['type']}] {e['id'][:8]}  project={e.get('project_id') or '-'}"
@@ -406,17 +404,38 @@ _SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv",
 _MAX_FILE_BYTES = 512 * 1024
 
 
-def _collect_files(root: Path) -> tuple[list[str], list[str]]:
-    """Return (rel_paths_for_indexing, all_rel_paths). Uses git ls-files when available."""
+def _collect_files(root: Path) -> list[dict]:
+    """Read all indexable files under root; returns list of {path, content, mtime}.
+
+    Uses git ls-files (respects .gitignore) when available. Handles subdirectory
+    ingest by normalizing paths relative to root, not the repo root.
+    Falls back to os.walk for non-git directories.
+    """
     import subprocess
     try:
+        repo_root_r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root, capture_output=True, timeout=10,
+        )
+        if repo_root_r.returncode != 0:
+            raise RuntimeError()
+        repo_root = Path(repo_root_r.stdout.decode(errors="replace").strip()).resolve()
+
         r = subprocess.run(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             cwd=root, capture_output=True, timeout=10,
         )
         if r.returncode != 0:
             raise RuntimeError()
-        rel_paths = [p for p in r.stdout.decode(errors="replace").split("\0") if p]
+        rel_paths = []
+        for p in r.stdout.decode(errors="replace").split("\0"):
+            if not p:
+                continue
+            try:
+                rel = str((repo_root / p).resolve().relative_to(root))
+                rel_paths.append(rel)
+            except ValueError:
+                continue  # outside root when indexing a subdirectory
     except Exception:
         rel_paths = []
         for dirpath, dirnames, filenames in os.walk(root):
@@ -424,8 +443,7 @@ def _collect_files(root: Path) -> tuple[list[str], list[str]]:
             for fname in filenames:
                 rel_paths.append(os.path.relpath(os.path.join(dirpath, fname), root))
 
-    files_to_send = []
-    all_paths = []
+    files = []
     for rel in rel_paths:
         if Path(rel).suffix.lower() not in _EXTENSIONS:
             continue
@@ -436,9 +454,12 @@ def _collect_files(root: Path) -> tuple[list[str], list[str]]:
             continue
         if st.st_size > _MAX_FILE_BYTES:
             continue
-        all_paths.append(rel)
-        files_to_send.append(rel)
-    return files_to_send, all_paths
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="replace")
+            files.append({"path": rel, "content": content, "mtime": st.st_mtime_ns / 1e6})
+        except Exception:
+            pass
+    return files
 
 
 @mcp.tool()
@@ -453,31 +474,19 @@ async def indexer_ingest(directory: str, project_id: str) -> str:
         directory: Absolute path to the directory to index.
         project_id: Project identifier for this codebase.
     """
+    import asyncio
     root = Path(directory).expanduser().resolve()
     if not root.is_dir():
         return f"Directory not found: {directory}"
 
-    import asyncio
-    rel_paths, all_paths = await asyncio.to_thread(_collect_files, root)
-
-    if not all_paths:
+    files = await asyncio.to_thread(_collect_files, root)
+    if not files:
         return f"No indexable files found in {directory}."
-
-    files = []
-    errors = []
-    for rel in rel_paths:
-        fpath = root / rel
-        try:
-            content = fpath.read_text(encoding="utf-8", errors="replace")
-            mtime = fpath.stat().st_mtime_ns / 1e6
-            files.append({"path": rel, "content": content, "mtime": mtime})
-        except Exception as exc:
-            errors.append(f"{rel}: {exc}")
 
     data = await client.post_json("/indexer/ingest", {
         "project_id": project_id,
         "files": files,
-        "all_paths": all_paths,
+        "all_paths": [f["path"] for f in files],
     })
     msg = (
         f"Ingested project_id={project_id}: "
@@ -485,10 +494,8 @@ async def indexer_ingest(directory: str, project_id: str) -> str:
         f"{data.get('skipped', '?')} skipped, "
         f"{data.get('deleted', '?')} deleted."
     )
-    if errors:
-        msg += f"\n{len(errors)} read error(s): " + "; ".join(errors[:5])
     if data.get("errors"):
-        msg += f"\nServer errors: " + "; ".join(data["errors"][:5])
+        msg += "\nServer errors: " + "; ".join(data["errors"][:5])
     return msg
 
 
