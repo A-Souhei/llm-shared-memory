@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from indexer.models import (
     IndexerStatus,
     IndexerProjectStats,
+    IndexerProgressJob,
     IngestRequest,
     StartResponse,
     SearchRequest,
@@ -48,6 +49,16 @@ async def list_projects() -> list[IndexerProjectStats]:
     """List all indexed projects with chunk and file counts."""
     rows = await store.list_projects_with_counts()
     return [IndexerProjectStats(**r) for r in rows]
+
+
+@router.get("/progress", response_model=list[IndexerProgressJob])
+async def get_progress() -> list[IndexerProgressJob]:
+    """Return active indexing jobs with processed/total file counts."""
+    healthy = await core.get_status()
+    if healthy.status != "ok":
+        raise HTTPException(status_code=503, detail="Indexer backend unavailable")
+    rows = await store.list_active_progress()
+    return [IndexerProgressJob(**r) for r in rows]
 
 
 @router.delete("/clear", response_model=dict)

@@ -75,6 +75,8 @@ interface IndexerResult {
   score: number
 }
 
+interface IndexingJob { project_id: string; processed: number; total: number }
+
 interface Toast { id: number; message: string; kind: 'success' | 'error' }
 interface ConfirmState { message: string; onConfirm: () => Promise<void> }
 
@@ -98,7 +100,9 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [indexingJobs, setIndexingJobs] = useState<IndexingJob[]>([])
   const toastId = useRef(0)
+  const prevJobCount = useRef(0)
 
   const addToast = useCallback((message: string, kind: 'success' | 'error') => {
     const id = ++toastId.current
@@ -124,6 +128,29 @@ export default function Home() {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/indexer/progress')
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data)) {
+            setIndexingJobs(data)
+            if (prevJobCount.current > 0 && data.length === 0) {
+              fetchData(true)
+            }
+            prevJobCount.current = data.length
+          }
+          // non-array = upstream error; leave current state unchanged
+        }
+      } catch { /* ignore */ }
+      timer = setTimeout(poll, 2000)
+    }
+    poll()
+    return () => clearTimeout(timer)
+  }, [fetchData])
 
   const askConfirm = (message: string, action: () => Promise<void>) =>
     setConfirm({ message, onConfirm: action })
@@ -215,6 +242,7 @@ export default function Home() {
             projects={projects}
             loading={loading}
             refreshing={refreshing}
+            indexingJobs={indexingJobs}
             onRefresh={() => fetchData(true)}
             onClearBiblion={id =>
               askConfirm(
@@ -285,6 +313,17 @@ export default function Home() {
   )
 }
 
+// ─── Spinner ───────────────────────────────────────────────────────────────────
+
+function Spinner() {
+  return (
+    <svg className="animate-spin h-3.5 w-3.5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  )
+}
+
 // ─── StatusPill ─────────────────────────────────────────────────────────────────
 
 function StatusPill({ label, ok }: { label: string; ok: boolean | undefined }) {
@@ -306,6 +345,7 @@ function ProjectsTab({
   projects,
   loading,
   refreshing,
+  indexingJobs,
   onRefresh,
   onClearBiblion,
   onClearIndex,
@@ -313,12 +353,14 @@ function ProjectsTab({
   projects: ProjectData[]
   loading: boolean
   refreshing: boolean
+  indexingJobs: IndexingJob[]
   onRefresh: () => void
   onClearBiblion: (id: string) => void
   onClearIndex: (id: string) => void
 }) {
   const totalEntries = projects.reduce((s, p) => s + p.biblionCount, 0)
   const totalChunks  = projects.reduce((s, p) => s + p.chunkCount, 0)
+  const jobMap = Object.fromEntries(indexingJobs.map(j => [j.project_id, j]))
 
   if (loading) {
     return (
@@ -342,6 +384,12 @@ function ProjectsTab({
           <span>
             <span className="font-semibold text-gray-800">{totalChunks}</span> index chunks
           </span>
+          {indexingJobs.length > 0 && (
+            <span className="flex items-center gap-1.5 text-blue-600">
+              <Spinner />
+              {indexingJobs.length} indexing…
+            </span>
+          )}
         </div>
         <button
           onClick={onRefresh}
@@ -399,7 +447,24 @@ function ProjectsTab({
                   </td>
 
                   <td className="px-5 py-4">
-                    {p.chunkCount === 0 ? (
+                    {jobMap[p.projectId] ? (
+                      <div className="flex items-center gap-2">
+                        <Spinner />
+                        <div>
+                          <div className="text-sm font-medium text-blue-700">
+                            {jobMap[p.projectId].processed} / {jobMap[p.projectId].total} files
+                          </div>
+                          {jobMap[p.projectId].total > 0 && (
+                            <div className="mt-1 h-1 w-28 bg-blue-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-blue-500 rounded-full transition-all"
+                                style={{ width: `${Math.round((jobMap[p.projectId].processed / jobMap[p.projectId].total) * 100)}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : p.chunkCount === 0 ? (
                       <span className="text-gray-300">—</span>
                     ) : (
                       <div>

@@ -38,40 +38,51 @@ async def get_status() -> IndexerStatus:
 
 async def ingest_files(req: IngestRequest) -> StartResponse:
     """Index files whose content is provided by the caller (no filesystem access)."""
+    import asyncio
     from biblion.embedding import embed
+    from biblion.bridge import slack
 
     await store.redis.ensure_index(req.project_id)
     known_mtimes = await store.redis.get_all_mtimes(req.project_id)
 
-    indexed = skipped = deleted = 0
+    to_embed = [f for f in req.files
+                if f.path not in known_mtimes or known_mtimes[f.path] != f.mtime]
+    skipped = len(req.files) - len(to_embed)
+    deleted = 0
+    indexed = 0
     errors: list[str] = []
 
-    for f in req.files:
-        if f.path in known_mtimes and known_mtimes[f.path] == f.mtime:
-            skipped += 1
-            continue
+    await store.redis.set_progress(req.project_id, processed=0, total=len(to_embed))
 
-        await store.redis.delete_by_path(req.project_id, f.path)
+    try:
+        for i, f in enumerate(to_embed):
+            await store.redis.set_progress(req.project_id, processed=i + 1, total=len(to_embed))
+            await store.redis.delete_by_path(req.project_id, f.path)
+            chunks = chunk_file(f.content, f.path)
+            if not chunks:
+                skipped += 1
+                continue
+            for chunk in chunks:
+                try:
+                    vector = await embed(chunk.text)
+                    await store.redis.upsert(req.project_id, chunk, vector, f.mtime)
+                    indexed += 1
+                except Exception as exc:
+                    errors.append(f"{f.path}:{chunk.start_line}: {exc}")
 
-        chunks = chunk_file(f.content, f.path)
-        if not chunks:
-            skipped += 1
-            continue
+        if req.all_paths is not None:
+            current = set(req.all_paths)
+            for old_path in set(known_mtimes) - current:
+                n = await store.redis.delete_by_path(req.project_id, old_path)
+                deleted += n
+    finally:
+        await store.redis.clear_progress(req.project_id)
 
-        for chunk in chunks:
-            try:
-                vector = await embed(chunk.text)
-                await store.redis.upsert(req.project_id, chunk, vector, f.mtime)
-                indexed += 1
-            except Exception as exc:
-                errors.append(f"{f.path}:{chunk.start_line}: {exc}")
-
-    # Delete chunks for files that no longer exist (requires all_paths from client)
-    if req.all_paths is not None:
-        current = set(req.all_paths)
-        for old_path in set(known_mtimes) - current:
-            n = await store.redis.delete_by_path(req.project_id, old_path)
-            deleted += n
+    if indexed > 0 or deleted > 0 or errors:
+        asyncio.create_task(slack.indexing_done(
+            project_id=req.project_id, indexed=indexed, skipped=skipped,
+            deleted=deleted, errors=len(errors),
+        ))
 
     return StartResponse(
         project_id=req.project_id,
@@ -84,63 +95,60 @@ async def ingest_files(req: IngestRequest) -> StartResponse:
 
 async def start_indexing(project_id: str, source_dir: str) -> StartResponse:
     """Walk source_dir, embed changed files, upsert chunks, delete removed files."""
-    from biblion.embedding import embed  # reuse biblion's embed function
+    import asyncio
+    from biblion.embedding import embed
+    from biblion.bridge import slack
 
     await store.redis.ensure_index(project_id)
     known_mtimes = await store.redis.get_all_mtimes(project_id)
 
-    indexed = 0
-    skipped = 0
-    deleted = 0
-    errors: list[str] = []
-    seen_paths: set[str] = set()
-
     root = Path(source_dir).resolve()
 
+    # First pass: collect eligible changed files
+    to_embed: list[tuple[Path, str, float]] = []
+    skipped = 0
+    seen_paths: set[str] = set()
+
     for dirpath, dirnames, filenames in os.walk(root):
-        # Skip hidden directories
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for fname in filenames:
             fpath = Path(dirpath) / fname
             ext = fpath.suffix.lower()
             if INDEXER_EXTENSIONS and ext not in INDEXER_EXTENSIONS:
-                skipped += 1
                 continue
-
             rel = str(fpath.relative_to(root))
             seen_paths.add(rel)
-
             try:
                 stat = fpath.stat()
             except OSError:
-                skipped += 1
                 continue
-
             if stat.st_size > INDEXER_MAX_FILE_SIZE:
-                skipped += 1
                 continue
-
-            mtime = stat.st_mtime_ns / 1_000_000  # ms
-
-            # Skip if mtime unchanged
+            mtime = stat.st_mtime_ns / 1_000_000
             if rel in known_mtimes and known_mtimes[rel] == mtime:
                 skipped += 1
                 continue
+            to_embed.append((fpath, rel, mtime))
 
+    await store.redis.set_progress(project_id, processed=0, total=len(to_embed))
+
+    indexed = 0
+    deleted = 0
+    errors: list[str] = []
+
+    try:
+        for i, (fpath, rel, mtime) in enumerate(to_embed):
+            await store.redis.set_progress(project_id, processed=i + 1, total=len(to_embed))
             try:
                 content = fpath.read_text(errors="replace")
             except Exception as exc:
                 errors.append(f"{rel}: read error: {exc}")
                 continue
-
             chunks = chunk_file(content, rel)
             if not chunks:
                 skipped += 1
                 continue
-
-            # Delete stale chunks for this file first
             await store.redis.delete_by_path(project_id, rel)
-
             for chunk in chunks:
                 try:
                     vector = await embed(chunk.text)
@@ -149,10 +157,17 @@ async def start_indexing(project_id: str, source_dir: str) -> StartResponse:
                 except Exception as exc:
                     errors.append(f"{rel}:{chunk.start_line}: embed error: {exc}")
 
-    # Delete chunks for files that no longer exist
-    for old_path in set(known_mtimes.keys()) - seen_paths:
-        n = await store.redis.delete_by_path(project_id, old_path)
-        deleted += n
+        for old_path in set(known_mtimes.keys()) - seen_paths:
+            n = await store.redis.delete_by_path(project_id, old_path)
+            deleted += n
+    finally:
+        await store.redis.clear_progress(project_id)
+
+    if indexed > 0 or deleted > 0 or errors:
+        asyncio.create_task(slack.indexing_done(
+            project_id=project_id, indexed=indexed, skipped=skipped,
+            deleted=deleted, errors=len(errors),
+        ))
 
     return StartResponse(
         project_id=project_id,
