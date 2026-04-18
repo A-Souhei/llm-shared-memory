@@ -706,10 +706,37 @@ function BridgeTab({
       </div>
 
       {bridges.length === 0 ? (
-        <div className="bg-white rounded-xl border p-10 text-center text-gray-400 text-sm">
-          No active bridges. Start opencode with{' '}
-          <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-xs">--bridge master</code>{' '}
-          and register via <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-xs">POST /bridge/set-master</code>.
+        <div className="bg-white rounded-xl border p-8 text-gray-500 text-sm space-y-4">
+          <p className="font-medium text-gray-700">No active bridges. Enable the MCP to get started:</p>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">1. Build the MCP server</p>
+            <pre className="bg-gray-50 border rounded px-3 py-2 font-mono text-xs text-gray-700 overflow-x-auto">{`cd /path/to/llm-shared-memory/mcp-server-ts
+npm install && npm run build`}</pre>
+          </div>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">2a. Claude Code</p>
+              <code className="block bg-gray-50 border rounded px-3 py-2 font-mono text-xs text-gray-700">
+                claude mcp add biblion -- node /path/to/llm-shared-memory/mcp-server-ts/dist/index.js
+              </code>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">2b. OpenCode / VuhitraCode</p>
+              <p className="text-xs text-gray-400">Add to <code className="bg-gray-100 px-1 rounded font-mono">.opencode/config.json</code> or <code className="bg-gray-100 px-1 rounded font-mono">~/.config/opencode/config.json</code>:</p>
+              <pre className="bg-gray-50 border rounded px-3 py-2 font-mono text-xs text-gray-700 overflow-x-auto">{`{
+  "mcp": {
+    "servers": {
+      "biblion": {
+        "type": "local",
+        "command": "node",
+        "args": ["/path/to/llm-shared-memory/mcp-server-ts/dist/index.js"]
+      }
+    }
+  }
+}`}</pre>
+            </div>
+            <p className="text-xs text-gray-400">Set <code className="bg-gray-100 px-1 rounded font-mono">BIBLION_API_URL</code> if the server is not on localhost.</p>
+          </div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -719,7 +746,7 @@ function BridgeTab({
                 {project}
               </h2>
               <div className="space-y-3">
-                {bList.map(b => <BridgeCard key={b.bridgeID} bridge={b} />)}
+                {bList.map(b => <BridgeCard key={b.bridge_id} bridge={b} />)}
               </div>
             </div>
           ))}
