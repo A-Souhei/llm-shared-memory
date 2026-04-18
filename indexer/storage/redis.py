@@ -41,6 +41,10 @@ def _mtime_key(project_id: str) -> str:
     return f"{REDIS_KEY_PREFIX}_{project_id}:mtimes"
 
 
+def _progress_key(project_id: str) -> str:
+    return f"{REDIS_KEY_PREFIX}_{project_id}:progress"
+
+
 async def check_health() -> bool:
     try:
         r = _get_client()
@@ -191,6 +195,41 @@ async def delete_all(project_id: str) -> int:
     except Exception:
         pass
     return len(keys)
+
+
+async def set_progress(project_id: str, processed: int, total: int) -> None:
+    r = _get_client()
+    await r.hset(_progress_key(project_id), mapping={"processed": processed, "total": total})
+    await r.expire(_progress_key(project_id), 3600)
+
+
+async def clear_progress(project_id: str) -> None:
+    r = _get_client()
+    await r.delete(_progress_key(project_id))
+
+
+async def list_active_progress() -> list[dict]:
+    r = _get_client()
+    cursor = 0
+    result = []
+    pattern = f"{REDIS_KEY_PREFIX}_*:progress"
+    while True:
+        cursor, batch = await r.scan(cursor, match=pattern, count=100)
+        for key in batch:
+            k = key.decode() if isinstance(key, bytes) else key
+            data = await r.hgetall(key)
+            if not data:
+                continue
+            project_id = k[len(REDIS_KEY_PREFIX) + 1:].rsplit(":progress", 1)[0]
+            decoded = {
+                (dk.decode() if isinstance(dk, bytes) else dk):
+                (dv.decode() if isinstance(dv, bytes) else dv)
+                for dk, dv in data.items()
+            }
+            result.append({"project_id": project_id, **decoded})
+        if cursor == 0:
+            break
+    return result
 
 
 async def list_projects() -> list[str]:

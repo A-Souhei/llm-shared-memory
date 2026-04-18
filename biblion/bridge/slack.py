@@ -48,6 +48,19 @@ async def task_pushed(description: str, task_id: str, to_dir: str) -> None:
     )
 
 
+async def indexing_done(project_id: str, indexed: int, skipped: int, deleted: int, errors: int) -> None:
+    icon = ":white_check_mark:" if not errors else ":warning:"
+    detail = f"indexed {indexed} chunks · skipped {skipped}"
+    if deleted:
+        detail += f" · deleted {deleted}"
+    if errors:
+        detail += f" · *{errors} errors*"
+    await notify(
+        f"{icon} *Indexing complete* — `{project_id}`",
+        detail,
+    )
+
+
 async def context_shared(entry_type: str, from_role: str, bridge_id: str, preview: str) -> None:
     if entry_type == "task_result":
         await notify(

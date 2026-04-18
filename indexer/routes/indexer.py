@@ -50,6 +50,12 @@ async def list_projects() -> list[IndexerProjectStats]:
     return [IndexerProjectStats(**r) for r in rows]
 
 
+@router.get("/progress")
+async def get_progress() -> list[dict]:
+    """Return active indexing jobs with processed/total file counts."""
+    return await store.list_active_progress()
+
+
 @router.delete("/clear", response_model=dict)
 async def clear(req: ClearRequest) -> dict:
     healthy = await core.get_status()
