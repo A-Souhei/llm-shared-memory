@@ -152,7 +152,10 @@ async def search(
         .paging(0, top_k)
         .dialect(2)
     )
-    results = await r.ft(idx).search(q, query_params={"vec": vec_bytes})
+    try:
+        results = await r.ft(idx).search(q, query_params={"vec": vec_bytes})
+    except Exception:
+        return []
     out = []
     for doc in results.docs:
         raw_score = float(getattr(doc, "score", 1.0))
