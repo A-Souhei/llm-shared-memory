@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import time
+from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp_server import client, session as sess
 
@@ -296,8 +297,21 @@ async def biblion_search(query: str, limit: int = 5, project_id: str = "") -> st
         limit: Max results (1-50, default 5).
         project_id: Narrow to a specific project, or leave empty for all projects.
     """
-    # TODO: implement in next session
-    raise NotImplementedError("biblion_search — implement in next session")
+    results = await client.post_json("/biblion/search", {
+        "query": query,
+        "limit": limit,
+        "project_id": project_id,
+    })
+    if not results:
+        return "No results found."
+    lines = [f"{len(results)} result(s):"]
+    for r in results:
+        lines.append(
+            f"\n[{r['type']}] score={r['score']:.3f}  project={r.get('project_id') or '-'}"
+            f"  tags={','.join(r.get('tags', []))}"
+        )
+        lines.append(r["content"][:800] + ("…" if len(r["content"]) > 800 else ""))
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -315,19 +329,42 @@ async def biblion_write(
         tags: Optional list of tags (auto-generated tags are merged in).
         project_id: Project this entry belongs to.
     """
-    # TODO: implement in next session
-    raise NotImplementedError("biblion_write — implement in next session")
+    data = await client.post_json("/biblion/write", {
+        "type": type,
+        "content": content,
+        "tags": tags or [],
+        "project_id": project_id,
+    })
+    if data.get("success"):
+        return f"Entry written. id={data['id']}"
+    return f"Write rejected: {data.get('reason', 'unknown')}"
 
 
 @mcp.tool()
-async def biblion_list(project_id: str = "") -> str:
-    """List all knowledge base entries, optionally filtered by project.
+async def biblion_list(project_id: str = "", type: str = "") -> str:
+    """List all knowledge base entries, optionally filtered by project and/or type.
 
     Args:
         project_id: Filter to a specific project, or leave empty for all.
+        type: Filter by entry type (structure, pattern, dependency, api, config, workflow).
     """
-    # TODO: implement in next session
-    raise NotImplementedError("biblion_list — implement in next session")
+    entries = await client.get_json(
+        "/biblion/list",
+        project_id=project_id or None,
+        type=type or None,
+    )
+    if not entries:
+        return "No entries found."
+    count = len(entries)
+    lines = [f"{count} {'entry' if count == 1 else 'entries'}:"]
+    for e in entries:
+        lines.append(
+            f"  [{e['type']}] {e['id'][:8]}  project={e.get('project_id') or '-'}"
+            f"  tags={e.get('tags', '')}"
+        )
+        preview = e["content"][:120].replace("\n", " ")
+        lines.append(f"    {preview}{'…' if len(e['content']) > 120 else ''}")
+    return "\n".join(lines)
 
 
 # ─── Indexer tools ─────────────────────────────────────────────────────────────
@@ -342,20 +379,124 @@ async def indexer_search(query: str, project_id: str, top_k: int = 5) -> str:
         project_id: The project to search (required — code index is per-project).
         top_k: Number of code chunks to return (1-50, default 5).
     """
-    # TODO: implement in next session
-    raise NotImplementedError("indexer_search — implement in next session")
+    data = await client.post_json("/indexer/search", {
+        "query": query,
+        "project_id": project_id,
+        "top_k": top_k,
+    })
+    results = data.get("results", []) if isinstance(data, dict) else []
+    if not results:
+        return "No results found."
+    lines = [f"{len(results)} chunk(s):"]
+    for r in results:
+        lines.append(f"\n{r['file_path']}:{r['start_line']}  score={r['score']:.3f}")
+        lines.append(r["text"][:600] + ("…" if len(r["text"]) > 600 else ""))
+    return "\n".join(lines)
+
+
+_EXTENSIONS = {
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java",
+    ".c", ".cpp", ".h", ".hpp", ".cs", ".rb", ".swift", ".kt",
+    ".md", ".txt", ".yaml", ".yml", ".toml", ".json", ".sh",
+}
+_SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv",
+              ".mypy_cache", ".pytest_cache", "dist", "build", ".next", "target"}
+_MAX_FILE_BYTES = 512 * 1024
+
+
+def _collect_files(root: Path) -> list[dict]:
+    """Read all indexable files under root; returns list of {path, content, mtime}.
+
+    Uses git ls-files (respects .gitignore) when available. Handles subdirectory
+    ingest by normalizing paths relative to root, not the repo root.
+    Falls back to os.walk for non-git directories.
+    """
+    import subprocess
+    try:
+        repo_root_r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root, capture_output=True, timeout=10,
+        )
+        if repo_root_r.returncode != 0:
+            raise RuntimeError()
+        repo_root = Path(repo_root_r.stdout.decode(errors="replace").strip()).resolve()
+
+        r = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=root, capture_output=True, timeout=10,
+        )
+        if r.returncode != 0:
+            raise RuntimeError()
+        rel_paths = []
+        for p in r.stdout.decode(errors="replace").split("\0"):
+            if not p:
+                continue
+            try:
+                rel = str((repo_root / p).resolve().relative_to(root))
+                rel_paths.append(rel)
+            except ValueError:
+                continue  # outside root when indexing a subdirectory
+    except Exception:
+        rel_paths = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+            for fname in filenames:
+                rel_paths.append(os.path.relpath(os.path.join(dirpath, fname), root))
+
+    files = []
+    for rel in rel_paths:
+        if Path(rel).suffix.lower() not in _EXTENSIONS:
+            continue
+        fpath = root / rel
+        try:
+            st = fpath.stat()
+        except OSError:
+            continue
+        if st.st_size > _MAX_FILE_BYTES:
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="replace")
+            files.append({"path": rel, "content": content, "mtime": st.st_mtime_ns / 1e6})
+        except Exception:
+            pass
+    return files
 
 
 @mcp.tool()
 async def indexer_ingest(directory: str, project_id: str) -> str:
     """Ingest a directory into the code index for semantic search.
 
+    Uses git ls-files (respects .gitignore) when inside a git repo,
+    falls back to directory walk otherwise. Only indexes known code/text
+    extensions up to 512 KB per file.
+
     Args:
         directory: Absolute path to the directory to index.
         project_id: Project identifier for this codebase.
     """
-    # TODO: implement in next session
-    raise NotImplementedError("indexer_ingest — implement in next session")
+    import asyncio
+    root = Path(directory).expanduser().resolve()
+    if not root.is_dir():
+        return f"Directory not found: {directory}"
+
+    files = await asyncio.to_thread(_collect_files, root)
+    if not files:
+        return f"No indexable files found in {directory}."
+
+    data = await client.post_json("/indexer/ingest", {
+        "project_id": project_id,
+        "files": files,
+        "all_paths": [f["path"] for f in files],
+    })
+    msg = (
+        f"Ingested project_id={project_id}: "
+        f"{data.get('indexed', '?')} indexed, "
+        f"{data.get('skipped', '?')} skipped, "
+        f"{data.get('deleted', '?')} deleted."
+    )
+    if data.get("errors"):
+        msg += "\nServer errors: " + "; ".join(data["errors"][:5])
+    return msg
 
 
 def run():
