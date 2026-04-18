@@ -135,12 +135,15 @@ export default function Home() {
       try {
         const res = await fetch('/api/indexer/progress')
         if (res.ok) {
-          const jobs: IndexingJob[] = await res.json()
-          setIndexingJobs(jobs)
-          if (prevJobCount.current > 0 && jobs.length === 0) {
-            fetchData(true)
+          const data = await res.json()
+          if (Array.isArray(data)) {
+            setIndexingJobs(data)
+            if (prevJobCount.current > 0 && data.length === 0) {
+              fetchData(true)
+            }
+            prevJobCount.current = data.length
           }
-          prevJobCount.current = jobs.length
+          // non-array = upstream error; leave current state unchanged
         }
       } catch { /* ignore */ }
       timer = setTimeout(poll, 2000)

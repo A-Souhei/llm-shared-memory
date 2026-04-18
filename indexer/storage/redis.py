@@ -199,8 +199,11 @@ async def delete_all(project_id: str) -> int:
 
 async def set_progress(project_id: str, processed: int, total: int) -> None:
     r = _get_client()
-    await r.hset(_progress_key(project_id), mapping={"processed": processed, "total": total})
-    await r.expire(_progress_key(project_id), 3600)
+    key = _progress_key(project_id)
+    pipe = r.pipeline()
+    pipe.hset(key, mapping={"processed": processed, "total": total})
+    pipe.expire(key, 3600)
+    await pipe.execute()
 
 
 async def clear_progress(project_id: str) -> None:
@@ -226,7 +229,15 @@ async def list_active_progress() -> list[dict]:
                 (dv.decode() if isinstance(dv, bytes) else dv)
                 for dk, dv in data.items()
             }
-            result.append({"project_id": project_id, **decoded})
+            try:
+                processed = int(decoded.get("processed", 0))
+            except (TypeError, ValueError):
+                processed = 0
+            try:
+                total = int(decoded.get("total", 0))
+            except (TypeError, ValueError):
+                total = 0
+            result.append({"project_id": project_id, "processed": processed, "total": total})
         if cursor == 0:
             break
     return result

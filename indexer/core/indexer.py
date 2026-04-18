@@ -54,32 +54,35 @@ async def ingest_files(req: IngestRequest) -> StartResponse:
 
     await store.redis.set_progress(req.project_id, processed=0, total=len(to_embed))
 
-    for i, f in enumerate(to_embed):
-        await store.redis.set_progress(req.project_id, processed=i, total=len(to_embed))
-        await store.redis.delete_by_path(req.project_id, f.path)
-        chunks = chunk_file(f.content, f.path)
-        if not chunks:
-            skipped += 1
-            continue
-        for chunk in chunks:
-            try:
-                vector = await embed(chunk.text)
-                await store.redis.upsert(req.project_id, chunk, vector, f.mtime)
-                indexed += 1
-            except Exception as exc:
-                errors.append(f"{f.path}:{chunk.start_line}: {exc}")
+    try:
+        for i, f in enumerate(to_embed):
+            await store.redis.set_progress(req.project_id, processed=i + 1, total=len(to_embed))
+            await store.redis.delete_by_path(req.project_id, f.path)
+            chunks = chunk_file(f.content, f.path)
+            if not chunks:
+                skipped += 1
+                continue
+            for chunk in chunks:
+                try:
+                    vector = await embed(chunk.text)
+                    await store.redis.upsert(req.project_id, chunk, vector, f.mtime)
+                    indexed += 1
+                except Exception as exc:
+                    errors.append(f"{f.path}:{chunk.start_line}: {exc}")
 
-    if req.all_paths is not None:
-        current = set(req.all_paths)
-        for old_path in set(known_mtimes) - current:
-            n = await store.redis.delete_by_path(req.project_id, old_path)
-            deleted += n
+        if req.all_paths is not None:
+            current = set(req.all_paths)
+            for old_path in set(known_mtimes) - current:
+                n = await store.redis.delete_by_path(req.project_id, old_path)
+                deleted += n
+    finally:
+        await store.redis.clear_progress(req.project_id)
 
-    await store.redis.clear_progress(req.project_id)
-    asyncio.create_task(slack.indexing_done(
-        project_id=req.project_id, indexed=indexed, skipped=skipped,
-        deleted=deleted, errors=len(errors),
-    ))
+    if indexed > 0 or deleted > 0 or errors:
+        asyncio.create_task(slack.indexing_done(
+            project_id=req.project_id, indexed=indexed, skipped=skipped,
+            deleted=deleted, errors=len(errors),
+        ))
 
     return StartResponse(
         project_id=req.project_id,
@@ -133,35 +136,38 @@ async def start_indexing(project_id: str, source_dir: str) -> StartResponse:
     deleted = 0
     errors: list[str] = []
 
-    for i, (fpath, rel, mtime) in enumerate(to_embed):
-        await store.redis.set_progress(project_id, processed=i, total=len(to_embed))
-        try:
-            content = fpath.read_text(errors="replace")
-        except Exception as exc:
-            errors.append(f"{rel}: read error: {exc}")
-            continue
-        chunks = chunk_file(content, rel)
-        if not chunks:
-            skipped += 1
-            continue
-        await store.redis.delete_by_path(project_id, rel)
-        for chunk in chunks:
+    try:
+        for i, (fpath, rel, mtime) in enumerate(to_embed):
+            await store.redis.set_progress(project_id, processed=i + 1, total=len(to_embed))
             try:
-                vector = await embed(chunk.text)
-                await store.redis.upsert(project_id, chunk, vector, mtime)
-                indexed += 1
+                content = fpath.read_text(errors="replace")
             except Exception as exc:
-                errors.append(f"{rel}:{chunk.start_line}: embed error: {exc}")
+                errors.append(f"{rel}: read error: {exc}")
+                continue
+            chunks = chunk_file(content, rel)
+            if not chunks:
+                skipped += 1
+                continue
+            await store.redis.delete_by_path(project_id, rel)
+            for chunk in chunks:
+                try:
+                    vector = await embed(chunk.text)
+                    await store.redis.upsert(project_id, chunk, vector, mtime)
+                    indexed += 1
+                except Exception as exc:
+                    errors.append(f"{rel}:{chunk.start_line}: embed error: {exc}")
 
-    for old_path in set(known_mtimes.keys()) - seen_paths:
-        n = await store.redis.delete_by_path(project_id, old_path)
-        deleted += n
+        for old_path in set(known_mtimes.keys()) - seen_paths:
+            n = await store.redis.delete_by_path(project_id, old_path)
+            deleted += n
+    finally:
+        await store.redis.clear_progress(project_id)
 
-    await store.redis.clear_progress(project_id)
-    asyncio.create_task(slack.indexing_done(
-        project_id=project_id, indexed=indexed, skipped=skipped,
-        deleted=deleted, errors=len(errors),
-    ))
+    if indexed > 0 or deleted > 0 or errors:
+        asyncio.create_task(slack.indexing_done(
+            project_id=project_id, indexed=indexed, skipped=skipped,
+            deleted=deleted, errors=len(errors),
+        ))
 
     return StartResponse(
         project_id=project_id,

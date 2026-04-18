@@ -61,3 +61,9 @@ class SearchResponse(BaseModel):
 
 class ClearRequest(BaseModel):
     project_id: str
+
+
+class IndexerProgressJob(BaseModel):
+    project_id: str
+    processed: int
+    total: int
