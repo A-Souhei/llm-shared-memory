@@ -20,6 +20,7 @@ from biblion.models import (
 from biblion.core.sanitize import sanitize
 from biblion.core.canonicalize import canonicalize
 from biblion.core.scoring import rank
+from biblion.config import SEARCH_MIN_SCORE
 
 # ---------------------------------------------------------------------------
 # App-level status state
@@ -84,7 +85,7 @@ async def write(req: WriteRequest) -> WriteResponse:
         raise HTTPException(status_code=503, detail="biblion disabled")
 
     clean_content = sanitize(req.content)
-    query, tags = canonicalize(req.type, clean_content, req.tags or [])
+    query, tags = canonicalize(clean_content, req.type, req.tags or [])
     vector = await embedding.embed(query)
 
     hits = await storage.search(vector, top_k=1, project_id=req.project_id or "")
@@ -160,9 +161,10 @@ async def search(req: SearchRequest) -> list[SearchResult]:
                 similarity=entry["similarity"],
                 score=entry["score"],
                 project_id=entry.get("project_id", ""),
-            )
         )
+    )
 
+    results = [r for r in results if r.similarity >= SEARCH_MIN_SCORE]
     return results
 
 
