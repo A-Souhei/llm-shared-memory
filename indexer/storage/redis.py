@@ -212,6 +212,22 @@ async def list_projects() -> list[str]:
     return projects
 
 
+async def list_projects_with_counts() -> list[dict]:
+    """Return [{project_id, chunk_count, file_count}] for all indexed projects."""
+    r = _get_client()
+    projects = await list_projects()
+    result = []
+    for project_id in projects:
+        file_count = int(await r.zcard(_mtime_key(project_id)))
+        try:
+            info = await r.ft(_index_name(project_id)).info()
+            chunk_count = int(info.get("num_docs", 0))
+        except Exception:
+            chunk_count = 0
+        result.append({"project_id": project_id, "chunk_count": chunk_count, "file_count": file_count})
+    return result
+
+
 def _escape_tag(value: str) -> str:
     """Escape special chars for RediSearch TAG queries."""
     special = r'.,<>{}\[\]\"\':;!@#$%^&*()\-+=~/ '

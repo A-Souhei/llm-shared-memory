@@ -2,7 +2,7 @@
 # Default port (must match docker-compose.yml and config.py)
 PORT ?= 18765
 
-.PHONY: help setup build run run-d stop logs clean run-with-qdrant run-with-ollama run-with-redis run-full ollama-pull test test-biblion test-indexer
+.PHONY: help setup build run run-d stop logs clean run-with-qdrant run-with-ollama run-with-redis run-with-webui run-full ollama-pull test test-biblion test-indexer logs-webui
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,9 @@ run-with-ollama: ## Start biblion + bundled Ollama (detached)
 run-with-redis: ## Start biblion + bundled Redis (detached)
 	docker compose --profile redis up -d
 
+run-with-webui: ## Start biblion + webui (detached)
+	docker compose --profile webui up -d
+
 run-full: ## Run biblion + all optional services
 	docker compose --profile qdrant --profile ollama --profile redis up -d
 
@@ -51,6 +54,9 @@ stop: ## Stop and remove containers
 
 logs: ## Tail logs from the biblion container
 	docker compose logs -f biblion
+
+logs-webui: ## Tail logs from the webui container
+	docker compose --profile webui logs -f webui
 
 clean: ## Remove containers, images, and qdrant volume
 	docker compose down --rmi local --volumes --remove-orphans

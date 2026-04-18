@@ -10,6 +10,7 @@ from indexer.models import (
     ClearRequest,
 )
 from indexer.core import indexer as core
+from indexer.storage import redis as store
 
 router = APIRouter(prefix="/indexer", tags=["indexer"])
 
@@ -39,6 +40,12 @@ async def search(req: SearchRequest) -> SearchResponse:
         top_k=req.top_k,
         min_score=req.min_score,
     )
+
+
+@router.get("/projects")
+async def list_projects() -> list[dict]:
+    """List all indexed projects with chunk and file counts."""
+    return await store.list_projects_with_counts()
 
 
 @router.delete("/clear", response_model=dict)
