@@ -84,7 +84,7 @@ async def write(req: WriteRequest) -> WriteResponse:
         raise HTTPException(status_code=503, detail="biblion disabled")
 
     clean_content = sanitize(req.content)
-    query, tags = canonicalize(req.type, clean_content, req.tags or [])
+    query, tags = canonicalize(clean_content, req.type, req.tags or [])
     vector = await embedding.embed(query)
 
     hits = await storage.search(vector, top_k=1, project_id=req.project_id or "")
@@ -145,9 +145,10 @@ async def search(req: SearchRequest) -> list[SearchResult]:
         })
 
     ranked = rank(intermediate)
+    filtered = [e for e in ranked if e["similarity"] >= config.SEARCH_MIN_SCORE]
 
     results: list[SearchResult] = []
-    for entry in ranked[:limit]:
+    for entry in filtered[:limit]:
         tags_raw = entry.get("tags", [])
         results.append(
             SearchResult(

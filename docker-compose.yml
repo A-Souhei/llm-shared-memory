@@ -34,6 +34,7 @@ services:
       EMBEDDING_URL: "${EMBEDDING_URL:-http://host.docker.internal:11434}"
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:-tinyllama}"
       DEDUP_THRESHOLD: "${DEDUP_THRESHOLD:-0.95}"
+      SEARCH_MIN_SCORE: "${SEARCH_MIN_SCORE:-0.45}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

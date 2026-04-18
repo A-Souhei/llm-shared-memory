@@ -13,6 +13,7 @@ EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text:lates
 
 # Tuning
 DEDUP_THRESHOLD: float = float(os.environ.get("DEDUP_THRESHOLD", "0.95"))
+SEARCH_MIN_SCORE: float = float(os.environ.get("SEARCH_MIN_SCORE", "0.45"))
 MAX_CANDIDATES: int = int(os.environ.get("MAX_CANDIDATES", "50"))
 SIMILARITY_WEIGHT: float = float(os.environ.get("SIMILARITY_WEIGHT", "0.7"))
 USAGE_WEIGHT: float = float(os.environ.get("USAGE_WEIGHT", "0.2"))
