@@ -1,10 +1,11 @@
 """Environment configuration — all settings read once at import time."""
 import os
 
-# Qdrant
-QDRANT_URL: str = os.environ.get("QDRANT_URL", "http://localhost:6333")
-QDRANT_API_KEY: str | None = os.environ.get("QDRANT_API_KEY")
-COLLECTION_PREFIX: str = os.environ.get("QDRANT_COLLECTION_PREFIX", "biblion")
+# Redis (primary storage backend)
+REDIS_URL: str = os.environ.get("REDIS_URL", "redis://localhost:6379")
+
+# Collection / index naming (replaces Qdrant collection prefix)
+COLLECTION_PREFIX: str = os.environ.get("QDRANT_COLLECTION_PREFIX", os.environ.get("COLLECTION_PREFIX", "biblion"))
 COLLECTION_NAME: str = f"{COLLECTION_PREFIX}_global"
 
 # Embedding (Ollama-compatible)

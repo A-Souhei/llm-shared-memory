@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from biblion import config
 from biblion import embedding
-from biblion.storage import qdrant as storage
+from biblion.storage import redis as storage
 from biblion.models import (
     WriteRequest,
     WriteResponse,
@@ -42,7 +42,7 @@ async def get_status() -> Status:
         return StatusReady(
             entry_count=entry_count,
             token_count=0,
-            qdrant_url=config.QDRANT_URL,
+            redis_url=config.REDIS_URL,
             embedding_url=config.EMBEDDING_URL,
             embedding_model=config.EMBEDDING_MODEL,
         )
@@ -54,19 +54,19 @@ async def get_status() -> Status:
 # ---------------------------------------------------------------------------
 
 async def initialize() -> None:
-    emb_ok, qdrant_ok = await asyncio.gather(
+    emb_ok, redis_ok = await asyncio.gather(
         embedding.check_health(),
         storage.check_health(),
     )
 
-    if not emb_ok and not qdrant_ok:
+    if not emb_ok and not redis_ok:
         set_status(False, "error")
         return
     if not emb_ok:
         set_status(False, "embedding_unreachable")
         return
-    if not qdrant_ok:
-        set_status(False, "qdrant_unreachable")
+    if not redis_ok:
+        set_status(False, "redis_unreachable")
         return
 
     vector = await embedding.embed("ping")

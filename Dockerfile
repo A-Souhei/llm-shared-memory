@@ -13,6 +13,7 @@ RUN uv sync --no-dev --frozen || uv sync --no-dev
 
 # Copy source
 COPY biblion/ ./biblion/
+COPY indexer/ ./indexer/
 
 # Expose app port
 EXPOSE 18765
