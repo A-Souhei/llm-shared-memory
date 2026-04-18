@@ -123,6 +123,35 @@ Get a webhook URL at **api.slack.com → Your Apps → Incoming Webhooks**.
 
 ---
 
+## Claude Code hook: auto project_id injection
+
+The indexer tools (`indexer_search`, `indexer_ingest`) require a `project_id` that must match what was used at ingest time. To avoid agents guessing the wrong ID, a `PreToolUse` hook automatically injects `project_id` from the current git repo name.
+
+**Script:** `.claude/biblion-inject-project-id.sh` (copy of `~/.claude/biblion-inject-project-id.sh`)
+
+**Wire it up** in `~/.claude/settings.json`:
+
+```json
+"hooks": {
+  "PreToolUse": [
+    {
+      "matcher": "mcp__biblion__indexer_search|mcp__biblion__indexer_ingest",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "/home/<you>/.claude/biblion-inject-project-id.sh",
+          "timeout": 5
+        }
+      ]
+    }
+  ]
+}
+```
+
+The script reads the tool input from stdin, runs `git rev-parse --show-toplevel | xargs basename`, and returns an `updatedInput` with the correct `project_id`. Sessions started before the hook is added need a restart or `/hooks` to pick it up.
+
+---
+
 ## How sessions work
 
 `bridge_set_master` and `bridge_set_friend` auto-generate a session ID and save the active session to `~/.biblion/bridge_session.json`. All subsequent bridge tools read from this file, so you never have to pass `bridge_id` or `session_id` explicitly.
