@@ -101,34 +101,22 @@ Restart opencode after editing the config. Tools are available immediately in th
 
 ## Slack notifications (optional)
 
-Set `SLACK_WEBHOOK_URL` so the server can notify you when bridge events need attention (task queued for friend, result ready for master, node joined/left):
-
-**Claude Code:**
+Slack notifications are sent by the **biblion REST server**, not the MCP
+process. Set `SLACK_WEBHOOK_URL` in the environment where `biblion` runs
+(`.env`, `docker-compose.yml`, or your shell before starting the server):
 
 ```bash
-claude mcp add biblion \
-  -e BIBLION_API_URL=http://localhost:18765 \
-  -e SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ \
-  -- biblion-mcp
+# .env  (or export in your shell)
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/XXX/YYY/ZZZ
 ```
 
-**OpenCode:**
+**docker-compose.yml:**
 
-```json
-{
-  "mcp": {
-    "servers": {
-      "biblion": {
-        "type": "local",
-        "command": "biblion-mcp",
-        "env": {
-          "BIBLION_API_URL": "http://localhost:18765",
-          "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/XXX/YYY/ZZZ"
-        }
-      }
-    }
-  }
-}
+```yaml
+services:
+  biblion:
+    environment:
+      SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
 ```
 
 Get a webhook URL at **api.slack.com → Your Apps → Incoming Webhooks**.

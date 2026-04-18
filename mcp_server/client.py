@@ -15,6 +15,13 @@ def get() -> httpx.AsyncClient:
     return _client
 
 
+async def aclose() -> None:
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
+
 async def get_json(path: str, **params) -> dict | list:
     r = await get().get(path, params={k: v for k, v in params.items() if v is not None})
     r.raise_for_status()

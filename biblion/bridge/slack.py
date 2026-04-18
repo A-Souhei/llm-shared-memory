@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 async def notify(text: str, context: str = "") -> None:
-    """Fire-and-forget POST to the Slack webhook. Silently ignored if not configured."""
+    """POST to the Slack webhook. Silently ignored if not configured."""
     url = config.SLACK_WEBHOOK_URL
     if not url:
         return
@@ -25,7 +25,7 @@ async def notify(text: str, context: str = "") -> None:
         logger.warning("Slack notify failed: %s", e)
 
 
-# ─── Event helpers ─────────────────────────────────────────────────────────────
+# ─── Event helpers (called via asyncio.create_task — non-blocking) ─────────────
 
 async def friend_joined(bridge_slug: str, friend_title: str, friend_dir: str) -> None:
     await notify(
@@ -36,7 +36,7 @@ async def friend_joined(bridge_slug: str, friend_title: str, friend_dir: str) ->
 
 async def node_left(node_title: str, bridge_id: str) -> None:
     await notify(
-        f":door: *{node_title or node_title}* left bridge `{bridge_id[:12]}…`",
+        f":door: *{node_title}* left bridge `{bridge_id[:12]}…`",
     )
 
 

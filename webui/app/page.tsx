@@ -27,25 +27,25 @@ interface StatusData {
 }
 
 interface NodeInfo {
-  nodeID: string
+  node_id: string
   role: 'master' | 'friend'
-  sessionID: string
+  session_id: string
   slug: string
   title: string
   directory: string
-  nodeURL: string
+  node_url: string
   heartbeat: number
   status: 'active' | 'inactive' | 'stale'
   project_id: string
 }
 
 interface BridgeInfo {
-  bridgeID: string
-  masterID: string
-  masterSlug: string
+  bridge_id: string
+  master_id: string
+  master_slug: string
   nodes: NodeInfo[]
   limit: number
-  createdAt: number
+  created_at: number
 }
 
 interface ProjectData {
@@ -677,8 +677,7 @@ function BridgeTab({
   }
 
   const byProject = bridges.reduce<Record<string, BridgeInfo[]>>((acc, b) => {
-    const master = b.nodes.find(n => n.role === 'master')
-    const proj = master?.project_id || '(unknown)'
+    const proj = b.nodes.find(n => n.role === 'master')?.project_id || '(unknown)'
     acc[proj] = acc[proj] ?? []
     acc[proj].push(b)
     return acc
@@ -734,7 +733,6 @@ function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
   const master = b.nodes.find(n => n.role === 'master')
   const friends = b.nodes.filter(n => n.role === 'friend')
   const now = Date.now()
-
   const age = master ? Math.round((now - master.heartbeat) / 1000) : null
 
   return (
@@ -744,11 +742,11 @@ function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Master</span>
-            {b.masterSlug && (
-              <span className="text-xs font-mono text-slate-400">{b.masterSlug}</span>
+            {b.master_slug && (
+              <span className="text-xs font-mono text-slate-400">{b.master_slug}</span>
             )}
           </div>
-          <div className="font-mono text-sm text-gray-800 truncate">{master?.title || b.bridgeID}</div>
+          <div className="font-mono text-sm text-gray-800 truncate">{master?.title || b.bridge_id}</div>
           <div className="text-xs text-gray-400 font-mono mt-0.5 truncate">{master?.directory}</div>
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -758,7 +756,9 @@ function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
               ♥ {age}s ago
             </span>
           )}
-          <span className="text-xs text-gray-300 font-mono">{b.limit - b.nodes.length} slot{b.limit - b.nodes.length !== 1 ? 's' : ''} free</span>
+          <span className="text-xs text-gray-300 font-mono">
+            {b.limit - b.nodes.length} slot{b.limit - b.nodes.length !== 1 ? 's' : ''} free
+          </span>
         </div>
       </div>
 
@@ -770,13 +770,13 @@ function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
           {friends.map(f => {
             const friendAge = Math.round((now - f.heartbeat) / 1000)
             return (
-              <div key={f.nodeID} className="px-5 py-3 flex items-start justify-between gap-4">
+              <div key={f.node_id} className="px-5 py-3 flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-xs font-medium text-blue-500">Friend</span>
                     {f.slug && <span className="text-xs text-gray-400 font-mono">{f.slug}</span>}
                   </div>
-                  <div className="text-sm text-gray-700 truncate">{f.title || f.nodeID}</div>
+                  <div className="text-sm text-gray-700 truncate">{f.title || f.node_id}</div>
                   <div className="text-xs text-gray-400 font-mono mt-0.5 truncate">{f.directory}</div>
                 </div>
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -784,8 +784,8 @@ function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
                   <span className={`text-xs ${friendAge > 45 ? 'text-amber-500' : 'text-gray-400'}`}>
                     ♥ {friendAge}s ago
                   </span>
-                  {f.nodeURL && (
-                    <span className="text-xs text-gray-300 font-mono truncate max-w-40">{f.nodeURL}</span>
+                  {f.node_url && (
+                    <span className="text-xs text-gray-300 font-mono truncate max-w-40">{f.node_url}</span>
                   )}
                 </div>
               </div>
@@ -796,7 +796,7 @@ function BridgeCard({ bridge: b }: { bridge: BridgeInfo }) {
 
       {/* Bridge ID footer */}
       <div className="px-5 py-2 bg-gray-50 border-t">
-        <span className="text-xs text-gray-300 font-mono">{b.bridgeID}</span>
+        <span className="text-xs text-gray-300 font-mono">{b.bridge_id}</span>
       </div>
     </div>
   )

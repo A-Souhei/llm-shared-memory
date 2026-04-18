@@ -66,20 +66,32 @@ async def set_friend(req: SetFriendRequest) -> BridgeInfo:
 
 @router.post("/leave")
 async def leave(req: LeaveRequest) -> dict:
-    await core.leave(req.bridgeID, req.sessionID)
+    await core.leave(req.bridge_id, req.session_id)
     return {"success": True}
 
 
 @router.post("/share-context")
 async def share_context(req: ShareContextRequest) -> dict:
+    # Default directory to the node's registered directory if not provided
+    directory = req.directory
+    if not directory:
+        nodes = await core.get_nodes(req.bridge_id)
+        for node in nodes:
+            if node.session_id == req.session_id:
+                directory = node.directory
+                break
+
     entry = ContextEntry(
-        nodeID=req.sessionID,
+        node_id=req.session_id,
         role=req.role,
-        directory=req.directory,
+        directory=directory,
         type=req.type,
         content=req.content,
     )
-    await core.share_context(req.bridgeID, req.sessionID, entry)
+    try:
+        await core.share_context(req.bridge_id, req.session_id, entry)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     return {"success": True}
 
 
@@ -87,7 +99,7 @@ async def share_context(req: ShareContextRequest) -> dict:
 async def push_task(req: PushTaskRequest) -> BridgeTask:
     try:
         return await core.push_task(req)
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -101,5 +113,5 @@ async def fetch_tasks(
 
 @router.post("/heartbeat")
 async def heartbeat(req: HeartbeatRequest) -> dict:
-    await core.heartbeat(req.bridgeID, req.sessionID)
+    await core.heartbeat(req.bridge_id, req.session_id)
     return {"success": True}

@@ -54,7 +54,14 @@ async def resolve() -> tuple[str, str]:
             "No active session. Call bridge_set_master or bridge_set_friend first."
         )
 
-    data = await client.get_json("/bridge/session", session_id=session_id)
+    try:
+        data = await client.get_json("/bridge/session", session_id=session_id)
+    except Exception as e:
+        # 404 or network error — treat as no active session
+        raise ValueError(
+            f"Could not resolve session (server error: {e}). "
+            "Call bridge_set_master or bridge_set_friend first."
+        )
 
     if not data.get("active"):
         reason = data.get("reason", "unknown")

@@ -1,4 +1,4 @@
-"""Pydantic models for bridge mode."""
+"""Pydantic models for bridge mode — all fields use snake_case."""
 from __future__ import annotations
 from typing import Literal
 from pydantic import BaseModel, Field
@@ -11,29 +11,29 @@ ContextType = Literal["finding", "work_summary", "task_result", "status"]
 
 
 class NodeInfo(BaseModel):
-    nodeID: str
+    node_id: str
     role: NodeRole
-    sessionID: str
+    session_id: str
     slug: str = ""
     title: str = ""
     directory: str = ""
-    nodeURL: str = ""
+    node_url: str = ""
     heartbeat: float = Field(default_factory=lambda: time.time() * 1000)
     status: NodeStatus = "active"
     project_id: str = ""
 
 
 class BridgeInfo(BaseModel):
-    bridgeID: str
-    masterID: str
-    masterSlug: str = ""
+    bridge_id: str
+    master_id: str
+    master_slug: str = ""
     nodes: list[NodeInfo]
     limit: int
-    createdAt: float = Field(default_factory=lambda: time.time() * 1000)
+    created_at: float = Field(default_factory=lambda: time.time() * 1000)
 
 
 class ContextEntry(BaseModel):
-    nodeID: str = ""
+    node_id: str = ""
     role: NodeRole = "master"
     directory: str = ""
     type: ContextType
@@ -50,33 +50,33 @@ class BridgeTask(BaseModel):
 
 
 class SetMasterRequest(BaseModel):
-    sessionID: str
+    session_id: str
     slug: str = ""
     title: str = ""
     directory: str = ""
-    nodeURL: str = ""
+    node_url: str = ""
     limit: int = 3
     project_id: str = ""
 
 
 class SetFriendRequest(BaseModel):
-    masterIDOrSlug: str
-    sessionID: str
+    master_id_or_slug: str
+    session_id: str
     slug: str = ""
     title: str = ""
     directory: str = ""
-    nodeURL: str = ""
+    node_url: str = ""
     project_id: str = ""
 
 
 class LeaveRequest(BaseModel):
-    bridgeID: str = ""
-    sessionID: str
+    bridge_id: str = ""
+    session_id: str
 
 
 class ShareContextRequest(BaseModel):
-    bridgeID: str
-    sessionID: str
+    bridge_id: str
+    session_id: str
     role: NodeRole
     directory: str = ""
     type: ContextType
@@ -84,13 +84,13 @@ class ShareContextRequest(BaseModel):
 
 
 class PushTaskRequest(BaseModel):
-    bridgeID: str
-    fromSessionID: str
-    toNodeID: str
+    bridge_id: str
+    from_session_id: str
+    to_node_id: str
     prompt: str
     description: str = ""
 
 
 class HeartbeatRequest(BaseModel):
-    bridgeID: str
-    sessionID: str
+    bridge_id: str
+    session_id: str
