@@ -719,7 +719,7 @@ function BridgeTab({
                 {project}
               </h2>
               <div className="space-y-3">
-                {bList.map(b => <BridgeCard key={b.bridgeID} bridge={b} />)}
+                {bList.map(b => <BridgeCard key={b.bridge_id} bridge={b} />)}
               </div>
             </div>
           ))}
