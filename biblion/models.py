@@ -8,7 +8,7 @@ import uuid
 EntryType = Literal["structure", "pattern", "dependency", "api", "config", "workflow"]
 
 DisabledReason = Literal[
-    "qdrant_unreachable",
+    "redis_unreachable",
     "embedding_unreachable",
     "error",
 ]
@@ -24,7 +24,7 @@ class StatusReady(BaseModel):
     type: Literal["ready"] = "ready"
     entry_count: int
     token_count: int
-    qdrant_url: str
+    redis_url: str
     embedding_url: str
     embedding_model: str
 
