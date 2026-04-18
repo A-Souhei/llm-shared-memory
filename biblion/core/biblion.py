@@ -20,7 +20,6 @@ from biblion.models import (
 from biblion.core.sanitize import sanitize
 from biblion.core.canonicalize import canonicalize
 from biblion.core.scoring import rank
-from biblion.config import SEARCH_MIN_SCORE
 
 # ---------------------------------------------------------------------------
 # App-level status state
@@ -146,9 +145,10 @@ async def search(req: SearchRequest) -> list[SearchResult]:
         })
 
     ranked = rank(intermediate)
+    filtered = [e for e in ranked if e["similarity"] >= config.SEARCH_MIN_SCORE]
 
     results: list[SearchResult] = []
-    for entry in ranked[:limit]:
+    for entry in filtered[:limit]:
         tags_raw = entry.get("tags", [])
         results.append(
             SearchResult(
@@ -161,10 +161,9 @@ async def search(req: SearchRequest) -> list[SearchResult]:
                 similarity=entry["similarity"],
                 score=entry["score"],
                 project_id=entry.get("project_id", ""),
+            )
         )
-    )
 
-    results = [r for r in results if r.similarity >= SEARCH_MIN_SCORE]
     return results
 
 
