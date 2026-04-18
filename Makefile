@@ -2,7 +2,7 @@
 # Default port (must match docker-compose.yml and config.py)
 PORT ?= 18765
 
-.PHONY: help setup build run run-d stop logs clean run-with-qdrant run-with-ollama run-with-redis run-with-webui run-full ollama-pull test test-biblion test-indexer logs-webui
+.PHONY: help setup build build-webui rebuild rebuild-webui run run-d stop logs clean run-with-qdrant run-with-ollama run-with-redis run-with-webui run-full ollama-pull test test-biblion test-indexer logs-webui
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,8 +25,17 @@ run: ## Run server locally (foreground)
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 
-build: ## Build the Docker image
-	docker compose build
+build: ## Build the biblion Docker image
+	docker compose build biblion
+
+build-webui: ## Build the webui Docker image
+	docker compose --profile webui build webui
+
+rebuild: ## Rebuild and restart biblion
+	docker compose build biblion && docker compose up -d biblion
+
+rebuild-webui: ## Rebuild and restart webui
+	docker compose --profile webui build webui && docker compose --profile webui up -d webui
 
 run-d: ## Start biblion only (detached) — uses external Redis via REDIS_URL
 	docker compose up -d

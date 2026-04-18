@@ -25,6 +25,8 @@ export async function GET() {
       proj.byType[entry.type] = (proj.byType[entry.type] ?? 0) + 1
     }
 
+    const indexerMap = new Map(indexerProjects.map(p => [p.project_id, p]))
+
     const allIds = new Set([
       ...biblionMap.keys(),
       ...indexerProjects.map(p => p.project_id),
@@ -32,7 +34,7 @@ export async function GET() {
 
     const projects = Array.from(allIds).map(id => {
       const b = biblionMap.get(id) ?? { count: 0, byType: {} }
-      const idx = indexerProjects.find(p => p.project_id === id) ?? { chunk_count: 0, file_count: 0 }
+      const idx = indexerMap.get(id) ?? { chunk_count: 0, file_count: 0 }
       return {
         projectId: id,
         biblionCount: b.count,

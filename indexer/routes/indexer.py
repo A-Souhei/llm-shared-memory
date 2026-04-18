@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 
 from indexer.models import (
     IndexerStatus,
+    IndexerProjectStats,
     IngestRequest,
     StartResponse,
     SearchRequest,
@@ -42,10 +43,11 @@ async def search(req: SearchRequest) -> SearchResponse:
     )
 
 
-@router.get("/projects")
-async def list_projects() -> list[dict]:
+@router.get("/projects", response_model=list[IndexerProjectStats])
+async def list_projects() -> list[IndexerProjectStats]:
     """List all indexed projects with chunk and file counts."""
-    return await store.list_projects_with_counts()
+    rows = await store.list_projects_with_counts()
+    return [IndexerProjectStats(**r) for r in rows]
 
 
 @router.delete("/clear", response_model=dict)

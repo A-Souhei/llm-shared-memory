@@ -9,7 +9,14 @@ export async function DELETE(request: Request) {
   const url = new URL(`${API}/biblion/clear`)
   if (projectId !== null) url.searchParams.set('project_id', projectId)
 
-  const res = await fetch(url.toString(), { method: 'DELETE' })
-  const data = await res.json()
-  return NextResponse.json(data, { status: res.status })
+  try {
+    const res = await fetch(url.toString(), { method: 'DELETE' })
+    if (res.headers.get('content-type')?.includes('application/json')) {
+      const data = await res.json()
+      return NextResponse.json(data, { status: res.status })
+    }
+    return NextResponse.json({ error: 'Upstream returned non-JSON response' }, { status: res.status })
+  } catch {
+    return NextResponse.json({ error: 'Upstream API is unreachable' }, { status: 503 })
+  }
 }
