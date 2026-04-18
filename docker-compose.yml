@@ -1,0 +1,42 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles: [qdrant]
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU support — uncomment if you have an NVIDIA GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  biblion:
+    build: .
+    image: biblion:latest
+    restart: unless-stopped
+    ports:
+      - "18765:18765"
+    environment:
+      PORT: "18765"
+      HOST: "0.0.0.0"
+      QDRANT_URL: "${QDRANT_URL:-http://host.docker.internal:6333}"
+      EMBEDDING_URL: "${EMBEDDING_URL:-http://host.docker.internal:11434}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-tinyllama}"
+      DEDUP_THRESHOLD: "${DEDUP_THRESHOLD:-0.95}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  qdrant_data:
+  ollama_data:
