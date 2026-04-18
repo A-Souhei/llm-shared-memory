@@ -12,6 +12,19 @@ from biblion.bridge.models import (
 router = APIRouter(prefix="/bridge")
 
 
+@router.get("/session")
+async def get_session(session_id: str = Query(...)) -> dict:
+    """Resolve a session_id to its bridge_id and check master liveness.
+
+    Returns {bridge_id, role, active} or 404 if the session is unknown.
+    active=False means the master heartbeat is stale — the bridge is broken.
+    """
+    result = await core.get_session(session_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
+
 @router.get("/list")
 async def list_bridges() -> list[BridgeInfo]:
     return await core.list_bridges()

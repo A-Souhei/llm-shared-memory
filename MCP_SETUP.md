@@ -135,19 +135,39 @@ Get a webhook URL at **api.slack.com → Your Apps → Incoming Webhooks**.
 
 ---
 
+## How sessions work
+
+`bridge_set_master` and `bridge_set_friend` auto-generate a session ID and save the active session to `~/.biblion/bridge_session.json`. All subsequent bridge tools read from this file, so you never have to pass `bridge_id` or `session_id` explicitly.
+
+```
+master agent                          friend agent
+─────────────────────────────────     ─────────────────────────────────
+bridge_set_master slug="backend"      bridge_set_friend "backend"
+  → saved to ~/.biblion/...             → saved to ~/.biblion/...
+
+bridge_push_task                      bridge_fetch_tasks
+  to_node_id="ses_..."                  → returns prompts, clears queue
+  prompt="Refactor auth module"
+                                      bridge_share_context
+bridge_get_context                      type="task_result"
+  → reads friend's result               content="task_id: ...\nDone"
+```
+
+The working directory defaults to `$PWD` — no need to pass it manually.
+
 ## Available tools
 
-| Tool | Description |
-|------|-------------|
-| `bridge_set_master` | Register this agent as a bridge master |
-| `bridge_set_friend` | Join an existing bridge as a friend |
-| `bridge_leave` | Leave the bridge cleanly |
-| `bridge_heartbeat` | Keep this node alive (call every ~15 s) |
-| `bridge_push_task` | Queue a prompt for a friend node |
-| `bridge_fetch_tasks` | Dequeue and return pending tasks (friend) |
-| `bridge_share_context` | Push a finding or task result to shared context |
-| `bridge_get_context` | Read recent shared context entries |
-| `bridge_get_info` | Show all nodes, roles, and heartbeat status |
+| Tool | Notes |
+|------|-------|
+| `bridge_set_master` | Register as master; saves session locally |
+| `bridge_set_friend` | Join a bridge by ID or slug; saves session locally |
+| `bridge_leave` | Leave and clear the local session |
+| `bridge_heartbeat` | Keep this node alive (~15 s interval) |
+| `bridge_get_info` | Show all nodes, roles, and heartbeat age |
+| `bridge_push_task` | Queue a prompt for a friend |
+| `bridge_fetch_tasks` | Dequeue all pending tasks (friend) |
+| `bridge_share_context` | Push a finding / task result to shared context |
+| `bridge_get_context` | Read recent shared context entries (master reads results here) |
 | `biblion_search` | *(coming soon)* Semantic search over the knowledge base |
 | `biblion_write` | *(coming soon)* Write a knowledge entry |
 | `biblion_list` | *(coming soon)* List knowledge base entries |

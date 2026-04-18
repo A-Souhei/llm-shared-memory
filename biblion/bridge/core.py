@@ -239,6 +239,46 @@ async def fetch_tasks(bridge_id: str, session_id: str) -> list[BridgeTask]:
     return tasks
 
 
+async def get_session(session_id: str) -> dict | None:
+    """Resolve session_id → bridge_id and check master liveness.
+
+    Returns {bridge_id, role, active} or None if the session is unknown.
+    active=False means the master's heartbeat has gone stale — the bridge
+    is effectively broken.
+    """
+    r = _get_client()
+    bridge_id = await r.get(_session_key(session_id))
+    if not bridge_id:
+        return None
+
+    k = _keys(bridge_id)
+    master_raw = await r.hgetall(k["master"])
+    if not master_raw:
+        return {"bridge_id": bridge_id, "role": None, "active": False, "reason": "master key missing"}
+
+    # Check master liveness
+    try:
+        master_hb = float(master_raw.get("heartbeat", 0))
+    except ValueError:
+        master_hb = 0
+    now_ms = time.time() * 1000
+    master_alive = (now_ms - master_hb) < STALE_MS
+
+    # Resolve this node's role
+    node_raw = await r.hget(k["nodes"], session_id)
+    role = None
+    if node_raw:
+        try:
+            role = NodeInfo.model_validate_json(node_raw).role
+        except Exception:
+            pass
+
+    if not master_alive:
+        return {"bridge_id": bridge_id, "role": role, "active": False, "reason": "master heartbeat stale"}
+
+    return {"bridge_id": bridge_id, "role": role, "active": True}
+
+
 async def get_info(bridge_id: str) -> BridgeInfo | None:
     r = _get_client()
     k = _keys(bridge_id)
