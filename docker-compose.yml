@@ -47,6 +47,12 @@ services:
       SEARCH_MIN_SCORE: "${SEARCH_MIN_SCORE:-0.45}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; r = urllib.request.urlopen('http://localhost:18765/biblion/status'); import json; d = json.loads(r.read()); exit(0 if d.get('type') == 'ready' else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   webui:
     build: ./webui
@@ -59,7 +65,8 @@ services:
       BIBLION_API_URL: "http://biblion:18765"
       PORT: "18766"
     depends_on:
-      - biblion
+      biblion:
+        condition: service_healthy
 
 volumes:
   qdrant_data:
