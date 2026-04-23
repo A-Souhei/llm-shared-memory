@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
     environment:
       TS_AUTHKEY: "${TS_AUTHKEY}"
-      TS_EXTRA_ARGS: "--advertise-tags=tag:container --reset"
+      TS_EXTRA_ARGS: ""
       TS_SERVE_CONFIG: /config/biblion.json
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "false"
@@ -103,7 +103,7 @@ services:
     restart: unless-stopped
     environment:
       TS_AUTHKEY: "${TS_AUTHKEY}"
-      TS_EXTRA_ARGS: "--advertise-tags=tag:container --reset"
+      TS_EXTRA_ARGS: ""
       TS_SERVE_CONFIG: /config/webui.json
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "false"
