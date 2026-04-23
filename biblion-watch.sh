@@ -14,7 +14,7 @@ set -uo pipefail
 
 BIBLION_URL="${BIBLION_URL:-http://localhost:18765}"
 BIBLION_INTERVAL="${BIBLION_INTERVAL:-30}"
-ROOT="$(pwd)"
+ROOT="$(cd "${1:-.}" && pwd)"
 
 # Derive project id from git remote or directory name
 if [[ -z "${BIBLION_PROJECT:-}" ]]; then
