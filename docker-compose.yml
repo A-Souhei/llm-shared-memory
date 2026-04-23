@@ -1,29 +1,33 @@
 services:
   qdrant:
     image: qdrant/qdrant:latest
-    profiles: [qdrant]
+    network_mode: host
     restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
 
   ollama:
     image: ollama/ollama:latest
-    profiles: [ollama]
+    network_mode: host
     restart: unless-stopped
+    ports:
+      - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU support — uncomment if you have an NVIDIA GPU:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   redis:
     image: redis/redis-stack:latest
-    profiles: [redis]
+    network_mode: host
     ports:
       - "6379:6379"
       - "8001:8001"
@@ -34,19 +38,18 @@ services:
   biblion:
     build: .
     image: biblion:latest
+    network_mode: host
     restart: unless-stopped
     ports:
       - "18765:18765"
     environment:
       PORT: "18765"
       HOST: "0.0.0.0"
-      REDIS_URL: "redis://host.docker.internal:23790"
-      EMBEDDING_URL: "${EMBEDDING_URL:-http://host.docker.internal:11434}"
+      REDIS_URL: "redis://localhost:6379"
+      EMBEDDING_URL: "${EMBEDDING_URL:-http://localhost:11434}"
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text:v1.5}"
       DEDUP_THRESHOLD: "${DEDUP_THRESHOLD:-0.95}"
       SEARCH_MIN_SCORE: "${SEARCH_MIN_SCORE:-0.45}"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; r = urllib.request.urlopen('http://localhost:18765/biblion/status'); import json; d = json.loads(r.read()); exit(0 if d.get('type') == 'ready' else 1)"]
       interval: 10s
@@ -57,12 +60,12 @@ services:
   webui:
     build: ./webui
     image: biblion-webui:latest
-    profiles: [webui]
+    network_mode: host
     restart: unless-stopped
     ports:
       - "18766:18766"
     environment:
-      BIBLION_API_URL: "http://biblion:18765"
+      BIBLION_API_URL: "http://localhost:18765"
       PORT: "18766"
     depends_on:
       biblion:

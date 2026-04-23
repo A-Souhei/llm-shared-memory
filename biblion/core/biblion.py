@@ -34,6 +34,8 @@ def set_status(ready: bool, reason: str = "") -> None:
 
 
 async def get_status() -> Status:
+    if not _status["ready"]:
+        await initialize()
     if _status["ready"]:
         try:
             entry_count = await storage.count()
