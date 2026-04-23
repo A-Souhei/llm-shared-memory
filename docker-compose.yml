@@ -59,6 +59,30 @@ services:
       retries: 10
       start_period: 15s
 
+  ts-biblion:
+    image: tailscale/tailscale:latest
+    hostname: biblion
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY}"
+      TS_EXTRA_ARGS: "--advertise-tags=tag:container --reset"
+      TS_SERVE_CONFIG: /config/biblion.json
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - ts_biblion_state:/var/lib/tailscale
+      - ./tailscale/config:/config
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - net_raw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      biblion:
+        condition: service_healthy
+
   webui:
     build: ./webui
     image: biblion-webui:latest
@@ -73,7 +97,33 @@ services:
       biblion:
         condition: service_healthy
 
+  ts-webui:
+    image: tailscale/tailscale:latest
+    hostname: biblion-webui
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: "${TS_AUTHKEY}"
+      TS_EXTRA_ARGS: "--advertise-tags=tag:container --reset"
+      TS_SERVE_CONFIG: /config/webui.json
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - ts_webui_state:/var/lib/tailscale
+      - ./tailscale/config:/config
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+      - net_raw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      biblion:
+        condition: service_healthy
+
 volumes:
   qdrant_data:
   ollama_data:
   redis_data:
+  ts_biblion_state:
+  ts_webui_state:
