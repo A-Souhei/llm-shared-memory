@@ -1,6 +1,6 @@
 # Biblion
 
-Persistent semantic knowledge base for LLM agents. Backed by Qdrant vector DB and Ollama embeddings.
+Persistent semantic knowledge base for LLM agents. Backed by Redis and Ollama embeddings.
 
 ## Quick Start
 
@@ -8,7 +8,7 @@ Persistent semantic knowledge base for LLM agents. Backed by Qdrant vector DB an
 # Install dependencies
 uv sync
 
-# Run the server (defaults: localhost:8765)
+# Run the server (default port: 18765)
 uv run biblion
 ```
 
@@ -16,20 +16,24 @@ uv run biblion
 
 | Variable | Default | Description |
 |---|---|---|
-| QDRANT_URL | http://localhost:6333 | Qdrant endpoint |
-| QDRANT_API_KEY | _(none)_ | Optional Qdrant API key |
+| REDIS_URL | redis://localhost:6379 | Redis endpoint |
+| COLLECTION_PREFIX | biblion | Prefix for Redis key namespacing |
 | EMBEDDING_URL | http://localhost:11434 | Ollama-compatible embedding server |
-| EMBEDDING_MODEL | nomic-embed-text | Embedding model name |
+| EMBEDDING_MODEL | nomic-embed-text:latest | Embedding model name |
 | DEDUP_THRESHOLD | 0.95 | Cosine similarity threshold for deduplication |
-| MAX_CANDIDATES | 20 | Max search results before re-ranking |
+| SEARCH_MIN_SCORE | 0.45 | Minimum score threshold for search results |
+| MAX_CANDIDATES | 50 | Max search results before re-ranking |
 | SIMILARITY_WEIGHT | 0.7 | Weight for similarity in scoring |
 | USAGE_WEIGHT | 0.2 | Weight for usage count in scoring |
 | QUALITY_WEIGHT | 0.1 | Weight for quality in scoring |
-| DEFAULT_QUALITY | 5 | Default quality (0–10) when not specified |
+| DEFAULT_QUALITY | 0.5 | Default quality (0–1) when not specified |
+| SLACK_WEBHOOK_URL | _(none)_ | Optional Slack webhook for notifications |
 | HOST | 0.0.0.0 | Server host |
-| PORT | 8765 | Server port |
+| PORT | 18765 | Server port |
 
 ## API Endpoints
+
+### Knowledge Base (`/biblion`)
 
 | Method | Path | Description |
 |---|---|---|
@@ -41,9 +45,37 @@ uv run biblion
 | DELETE | /biblion/clear | Clear entries (optional: ?project_id=) |
 | DELETE | /biblion/{id} | Delete a specific entry |
 
-## Entry Types
+### Bridge (`/bridge`)
 
-The following entry types are supported:
+Multi-agent coordination over Redis pub/sub.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | /bridge/session | Resolve session_id to bridge_id |
+| POST | /bridge/set-master | Register as master node |
+| POST | /bridge/set-friend | Join a bridge as friend node |
+| POST | /bridge/leave | Leave the bridge |
+| POST | /bridge/heartbeat | Send keepalive ping |
+| GET | /bridge/info | List all nodes and their status |
+| POST | /bridge/push-task | Queue a task for a friend node |
+| GET | /bridge/tasks | Fetch pending tasks (friend) |
+| POST | /bridge/share-context | Push a finding/result to shared context |
+| GET | /bridge/context | Read recent shared context entries |
+
+### Code Indexer (`/indexer`)
+
+Semantic search over indexed source code.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | /indexer/status | Indexer readiness status |
+| GET | /indexer/projects | List indexed projects with stats |
+| GET | /indexer/progress | Active indexing job progress |
+| POST | /indexer/ingest | Ingest files into the code index |
+| POST | /indexer/search | Semantic search over indexed code |
+| DELETE | /indexer/clear | Clear index for a project |
+
+## Entry Types
 
 - `structure` — Codebase architecture, module layouts, directory patterns
 - `pattern` — Design patterns, conventions, best practices
@@ -54,27 +86,44 @@ The following entry types are supported:
 
 ## Docker Compose
 
-```yaml
-services:
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-    volumes:
-      - qdrant_data:/qdrant/storage
+All services are defined in `docker-compose.yml`. A `.env` file is needed for Tailscale:
 
-  biblion:
-    build: .
-    ports:
-      - "8765:8765"
-    environment:
-      QDRANT_URL: http://qdrant:6333
-      EMBEDDING_URL: http://host.docker.internal:11434
-    depends_on:
-      - qdrant
+```bash
+# .env
+TS_AUTHKEY=tskey-auth-...
+```
 
-volumes:
-  qdrant_data:
+Start everything:
+
+```bash
+docker compose up -d
+```
+
+Services:
+
+| Service | Port | Description |
+|---|---|---|
+| qdrant | 6333/6334 | Vector DB (used by indexer) |
+| ollama | 11434 | Embedding model server (GPU-accelerated) |
+| redis | 23790 | Primary storage backend (redis-stack) |
+| biblion | 18765 | REST API server |
+| webui | 18766 | Web dashboard |
+| ts-biblion | — | Tailscale sidecar for biblion |
+| ts-webui | — | Tailscale sidecar for webui |
+
+## MCP Server
+
+The `biblion-mcp` CLI exposes all tools to any MCP-compatible agent. See `MCP_SETUP.md` for full setup instructions.
+
+```bash
+# Install (once)
+uv sync
+
+# Add to Claude Code
+claude mcp add biblion -- biblion-mcp
+
+# Point at a remote server
+claude mcp add biblion -e BIBLION_API_URL=http://my-server:18765 -- biblion-mcp
 ```
 
 ## Dockerfile
@@ -90,8 +139,4 @@ CMD ["uv", "run", "biblion"]
 
 ## Service Status & Startup Behavior
 
-The biblion service always starts successfully. If Qdrant or the embedding server is unreachable at startup, the service will remain operational but all write and search endpoints will return HTTP 503 (Service Unavailable) until connectivity is restored. The `/biblion/status` endpoint always responds and indicates the current readiness state.
-
-## Bridge Mode (Coming Soon)
-
-Bridge mode (Redis pub/sub multi-agent coordination) is planned — see `BRIDGE_MODE_IMPLEMENTATION.md`.
+The biblion service always starts successfully. If Redis or the embedding server is unreachable at startup, the service will remain operational but write and search endpoints will return HTTP 503 until connectivity is restored. The `/biblion/status` endpoint always responds and indicates the current readiness state.
