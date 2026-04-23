@@ -29,11 +29,13 @@ services:
     image: redis/redis-stack:latest
     network_mode: host
     ports:
-      - "6379:6379"
+      - "23790:23790"
       - "8001:8001"
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    environment:
+      REDIS_ARGS: "--port 23790"
 
   biblion:
     build: .
@@ -45,7 +47,7 @@ services:
     environment:
       PORT: "18765"
       HOST: "0.0.0.0"
-      REDIS_URL: "redis://localhost:6379"
+      REDIS_URL: "redis://localhost:23790"
       EMBEDDING_URL: "${EMBEDDING_URL:-http://localhost:11434}"
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text:v1.5}"
       DEDUP_THRESHOLD: "${DEDUP_THRESHOLD:-0.95}"
