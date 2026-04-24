@@ -206,7 +206,7 @@ export default function Home() {
     const data = await res.json()
     if (res.ok) {
       addToast(`Deleted ${data.deleted} memento(s)`, 'success')
-      fetchMementos(projectId)
+      await fetchMementos(projectId)
     } else {
       addToast('Failed to clear mementos', 'error')
     }

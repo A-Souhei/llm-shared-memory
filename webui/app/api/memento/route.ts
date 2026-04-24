@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const project_id = req.nextUrl.searchParams.get('project_id') ?? ''
+  const project_id = req.nextUrl.searchParams.get('project_id')
+  if (!project_id) return NextResponse.json({ error: 'project_id required' }, { status: 400 })
   try {
     const res = await fetch(`${API}/biblion/memento/clear?project_id=${encodeURIComponent(project_id)}`, { method: 'DELETE' })
     return NextResponse.json(await res.json(), { status: res.status })

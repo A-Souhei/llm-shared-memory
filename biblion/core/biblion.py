@@ -258,9 +258,8 @@ async def list_mementos(project_id: str) -> list[MementoEntry]:
 
 async def clear_mementos(project_id: str) -> int:
     hits = await storage.scroll_all(project_id=project_id)
-    ids = [h["payload"]["id"] for h in hits if h.get("payload", {}).get("type") == "memento"]
-    for entry_id in ids:
-        await storage.delete_by_id(entry_id)
+    ids = [h["id"] for h in hits if h.get("payload", {}).get("type") == "memento"]
+    await asyncio.gather(*[storage.delete_by_id(entry_id) for entry_id in ids])
     return len(ids)
 
 

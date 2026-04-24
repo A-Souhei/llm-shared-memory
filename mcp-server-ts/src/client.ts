@@ -6,7 +6,7 @@ import { randomBytes } from "crypto";
 export const BASE_URL = process.env.BIBLION_API_URL ?? "http://localhost:18765";
 const TIMEOUT_MS = 30_000;
 
-async function request(method: "GET" | "POST", path: string, body?: unknown, params?: Record<string, string>): Promise<unknown> {
+async function request(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, params?: Record<string, string>): Promise<unknown> {
   const url = new URL(path, BASE_URL);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -38,6 +38,10 @@ export function getJson(path: string, params?: Record<string, string>): Promise<
 
 export function postJson(path: string, body: unknown): Promise<unknown> {
   return request("POST", path, body);
+}
+
+export function deleteJson(path: string, params?: Record<string, string>): Promise<unknown> {
+  return request("DELETE", path, undefined, params);
 }
 
 // ─── Session ──────────────────────────────────────────────────────────────────

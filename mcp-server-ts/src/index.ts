@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  BASE_URL, getJson, postJson,
+  BASE_URL, getJson, postJson, deleteJson,
   loadSessionId, saveSessionId, clearSessionId, newSessionId,
   resolveSession, getRole,
 } from "./client.js";
@@ -299,9 +299,8 @@ server.tool(
     project_id: z.string().describe("Project whose mementos to delete (required)."),
   },
   async ({ project_id }) => {
-    const data = await fetch(`${BASE_URL}/biblion/memento/clear?project_id=${encodeURIComponent(project_id)}`, { method: "DELETE" });
-    const json = await data.json() as Record<string, unknown>;
-    return ok(`Cleared ${json["deleted"] ?? 0} memento(s) for project=${project_id}.`);
+    const data = await deleteJson("/biblion/memento/clear", { project_id }) as Record<string, unknown>;
+    return ok(`Cleared ${data["deleted"] ?? 0} memento(s) for project=${project_id}.`);
   }
 );
 
