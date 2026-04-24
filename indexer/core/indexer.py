@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import os
+import time
 from pathlib import Path
 
 from indexer.config import (
@@ -17,11 +18,14 @@ from indexer import storage as store
 logger = logging.getLogger(__name__)
 
 _healthy: bool = False
+_last_ping: float = 0.0
+_PING_COOLDOWN = 10.0
 
 
 async def initialize() -> None:
-    global _healthy
+    global _healthy, _last_ping
     _healthy = await store.redis.check_health()
+    _last_ping = time.monotonic()
     if _healthy:
         logger.info("Indexer: Redis connection OK (%s)", REDIS_URL)
     else:
@@ -29,8 +33,12 @@ async def initialize() -> None:
 
 
 async def get_status() -> IndexerStatus:
-    healthy = await store.redis.check_health()
-    if not healthy:
+    global _healthy, _last_ping
+    now = time.monotonic()
+    if not _healthy or now - _last_ping >= _PING_COOLDOWN:
+        _healthy = await store.redis.check_health()
+        _last_ping = now
+    if not _healthy:
         return IndexerStatus(status="disabled", reason="redis_unreachable", redis_url=REDIS_URL)
     projects = await store.redis.list_projects()
     return IndexerStatus(status="ok", redis_url=REDIS_URL, projects=projects)

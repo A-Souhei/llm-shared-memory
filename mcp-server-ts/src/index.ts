@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  BASE_URL, getJson, postJson,
+  BASE_URL, getJson, postJson, deleteJson,
   loadSessionId, saveSessionId, clearSessionId, newSessionId,
   resolveSession, getRole,
 } from "./client.js";
@@ -255,6 +255,55 @@ server.tool(
   }
 );
 
+// ─── Memento tools ───────────────────────────────────────────────────────────
+
+server.tool(
+  "memento_save",
+  "Save a cleaned session memento for the current project. Call this when the user asks to save a memento or before compaction. Distill the session into: commands used, operations/workflow steps, and notes on what worked or to avoid. project_id is required.",
+  {
+    project_id: z.string().describe("Project this memento belongs to (required, non-empty)."),
+    content: z.string().describe("Cleaned session process in markdown: commands used, workflow steps, notes. Max 50 000 chars."),
+  },
+  async ({ project_id, content }) => {
+    const data = await postJson("/biblion/memento/save", { project_id, content }) as Record<string, unknown>;
+    if (data["success"]) return ok(`Memento saved. id=${data["id"]}`);
+    return ok(`Memento save failed: ${data["reason"] ?? "unknown"}`);
+  }
+);
+
+server.tool(
+  "memento_load",
+  "Load recent session mementos for the current project. Call this at the start of a session to restore process context lost during compaction.",
+  {
+    project_id: z.string().describe("Project to load mementos for (required)."),
+    limit: z.number().int().default(3).describe("Number of mementos to return, newest first (default 3)."),
+  },
+  async ({ project_id, limit }) => {
+    const entries = await getJson("/biblion/memento/list", { project_id }) as Array<Record<string, unknown>>;
+    if (!entries.length) return ok(`No mementos found for project=${project_id}.`);
+    const shown = entries.slice(0, limit);
+    const lines = [`${entries.length} memento(s) for project=${project_id} (showing ${shown.length}):`];
+    for (const e of shown) {
+      lines.push(`\n--- [${e["created_at"] ?? ""}] id=${(e["id"] as string).slice(0, 8)} ---`);
+      const c = e["content"] as string;
+      lines.push(c.length > 2000 ? c.slice(0, 2000) + "…" : c);
+    }
+    return ok(lines.join("\n"));
+  }
+);
+
+server.tool(
+  "memento_clear",
+  "Delete all mementos for a project. Use with caution — this is irreversible.",
+  {
+    project_id: z.string().describe("Project whose mementos to delete (required)."),
+  },
+  async ({ project_id }) => {
+    const data = await deleteJson("/biblion/memento/clear", { project_id }) as Record<string, unknown>;
+    return ok(`Cleared ${data["deleted"] ?? 0} memento(s) for project=${project_id}.`);
+  }
+);
+
 // ─── Indexer tools ────────────────────────────────────────────────────────────
 
 server.tool(
@@ -301,7 +350,7 @@ server.tool(
     try {
       const { stdout: rootOut } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: directory, timeout: 10000 });
       const repoRoot = rootOut.trim();
-      const { stdout } = await execFileAsync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: directory, timeout: 10000 });
+      const { stdout } = await execFileAsync("git", ["ls-files", "--cached", "-z"], { cwd: directory, timeout: 10000 });
       relPaths = stdout.split("\0").filter(Boolean).map(p => {
         try { return path.relative(directory, path.resolve(repoRoot, p)); } catch { return ""; }
       }).filter(Boolean);
@@ -323,16 +372,19 @@ server.tool(
     }
 
     const files: { path: string; content: string; mtime: number }[] = [];
-    await Promise.all(relPaths.map(async rel => {
-      if (!EXTENSIONS.has(path.extname(rel).toLowerCase())) return;
-      const abs = path.join(directory, rel);
-      try {
-        const st = await stat(abs);
-        if (st.size > MAX_BYTES) return;
-        const content = await readFile(abs, "utf8");
-        files.push({ path: rel, content, mtime: st.mtimeMs });
-      } catch { /* skip unreadable */ }
-    }));
+    const CONCURRENCY = 20;
+    for (let i = 0; i < relPaths.length; i += CONCURRENCY) {
+      await Promise.all(relPaths.slice(i, i + CONCURRENCY).map(async rel => {
+        if (!EXTENSIONS.has(path.extname(rel).toLowerCase())) return;
+        const abs = path.join(directory, rel);
+        try {
+          const st = await stat(abs);
+          if (st.size > MAX_BYTES) return;
+          const content = await readFile(abs, "utf8");
+          files.push({ path: rel, content, mtime: st.mtimeMs });
+        } catch { /* skip unreadable */ }
+      }));
+    }
 
     if (!files.length) return ok(`No indexable files found in ${directory}.`);
 

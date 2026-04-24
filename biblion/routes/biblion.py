@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from biblion.models import WriteRequest, SearchRequest, WriteResponse, SearchResult, ListEntry, Status
+from biblion.models import WriteRequest, SearchRequest, WriteResponse, SearchResult, ListEntry, Status, MementoSaveRequest, MementoEntry
 from biblion.core import biblion as core
 
 router = APIRouter(prefix="/biblion")
@@ -45,3 +45,22 @@ async def delete_entry(entry_id: str) -> dict[str, bool]:
     """Delete a specific biblion entry by ID."""
     await core.delete_entry(entry_id)
     return {"deleted": True}
+
+
+@router.post("/memento/save")
+async def save_memento(req: MementoSaveRequest) -> WriteResponse:
+    """Save a session memento (project-scoped, no deduplication)."""
+    return await core.save_memento(req)
+
+
+@router.get("/memento/list")
+async def list_mementos(project_id: str = Query(...)) -> list[MementoEntry]:
+    """List mementos for a project, newest first."""
+    return await core.list_mementos(project_id)
+
+
+@router.delete("/memento/clear")
+async def clear_mementos(project_id: str = Query(...)) -> dict[str, int]:
+    """Delete all mementos for a project."""
+    deleted = await core.clear_mementos(project_id)
+    return {"deleted": deleted}

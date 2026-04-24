@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 import time
 import uuid
 
-EntryType = Literal["structure", "pattern", "dependency", "api", "config", "workflow"]
+EntryType = Literal["structure", "pattern", "dependency", "api", "config", "workflow", "memento"]
 
 DisabledReason = Literal[
     "redis_unreachable",
@@ -87,3 +87,15 @@ class WriteResponse(BaseModel):
     success: bool
     id: str = ""
     reason: str = ""
+
+
+class MementoSaveRequest(BaseModel):
+    content: str = Field(..., max_length=50_000)
+    project_id: str
+
+
+class MementoEntry(BaseModel):
+    id: str
+    content: str
+    project_id: str
+    created_at: str

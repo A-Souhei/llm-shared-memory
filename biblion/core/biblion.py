@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -16,6 +17,8 @@ from biblion.models import (
     Status,
     StatusReady,
     StatusDisabled,
+    MementoSaveRequest,
+    MementoEntry,
 )
 from biblion.core.sanitize import sanitize
 from biblion.core.canonicalize import canonicalize
@@ -26,6 +29,9 @@ from biblion.core.scoring import rank
 # ---------------------------------------------------------------------------
 
 _status: dict = {"ready": False, "reason": "not initialized"}
+_init_lock = asyncio.Lock()
+_last_init_attempt: float = 0.0
+_INIT_COOLDOWN = 10.0
 
 
 def set_status(ready: bool, reason: str = "") -> None:
@@ -34,8 +40,14 @@ def set_status(ready: bool, reason: str = "") -> None:
 
 
 async def get_status() -> Status:
+    global _last_init_attempt
     if not _status["ready"]:
-        await initialize()
+        now = time.monotonic()
+        if now - _last_init_attempt >= _INIT_COOLDOWN:
+            async with _init_lock:
+                if not _status["ready"] and time.monotonic() - _last_init_attempt >= _INIT_COOLDOWN:
+                    _last_init_attempt = time.monotonic()
+                    await initialize()
     if _status["ready"]:
         try:
             entry_count = await storage.count()
@@ -201,6 +213,67 @@ async def list_entries(
 
 
 # ---------------------------------------------------------------------------
+# Memento — save
+# ---------------------------------------------------------------------------
+
+async def save_memento(req: MementoSaveRequest) -> WriteResponse:
+    if not _status["ready"]:
+        raise HTTPException(status_code=503, detail="biblion disabled")
+    if not req.project_id.strip():
+        raise HTTPException(status_code=400, detail="project_id is required for mementos")
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_id = str(uuid4())
+    vector = await embedding.embed(req.content[:500])
+
+    payload = {
+        "id": new_id,
+        "type": "memento",
+        "content": req.content,
+        "tags": [],
+        "project_id": req.project_id,
+        "branch": "",
+        "session_id": "",
+        "quality": 0.7,
+        "used_count": 0,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await storage.upsert([{"id": new_id, "vector": vector, "payload": payload}])
+    return WriteResponse(success=True, id=new_id)
+
+
+# ---------------------------------------------------------------------------
+# Memento — list (newest first)
+# ---------------------------------------------------------------------------
+
+async def list_mementos(project_id: str) -> list[MementoEntry]:
+    hits = await storage.scroll_all(project_id=project_id)
+    mementos = [h for h in hits if h.get("payload", {}).get("type") == "memento"]
+    mementos.sort(key=lambda h: h["payload"].get("created_at", ""), reverse=True)
+    return [
+        MementoEntry(
+            id=h["payload"]["id"],
+            content=h["payload"]["content"],
+            project_id=h["payload"]["project_id"],
+            created_at=h["payload"].get("created_at", ""),
+        )
+        for h in mementos
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Memento — clear all for a project
+# ---------------------------------------------------------------------------
+
+async def clear_mementos(project_id: str) -> int:
+    hits = await storage.scroll_all(project_id=project_id)
+    ids = [h["id"] for h in hits if h.get("payload", {}).get("type") == "memento"]
+    await asyncio.gather(*[storage.delete_by_id(entry_id) for entry_id in ids])
+    return len(ids)
+
+
+# ---------------------------------------------------------------------------
 # Delete entry
 # ---------------------------------------------------------------------------
 
@@ -215,10 +288,7 @@ async def delete_entry(entry_id: str) -> bool:
 
 async def clear(project_id: str | None = None) -> int:
     if project_id:
-        before = await storage.count()
-        await storage.delete_by_project(project_id)
-        after = await storage.count()
-        return max(0, before - after)
+        return await storage.delete_by_project(project_id)
     else:
         await storage.delete_all()
         return 0

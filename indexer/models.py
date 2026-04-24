@@ -1,6 +1,15 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import Any
+
+_PROJECT_ID_RE = re.compile(r'^[a-zA-Z0-9_\-]{1,128}$')
+
+
+def _validate_project_id(v: str) -> str:
+    if not _PROJECT_ID_RE.match(v):
+        raise ValueError("project_id must be 1–128 alphanumeric/dash/underscore characters")
+    return v
 
 
 class IndexerStatus(BaseModel):
@@ -27,6 +36,11 @@ class IngestRequest(BaseModel):
     files: list[FileInput]              # new or changed files (with content)
     all_paths: list[str] | None = None  # all current paths — enables deletion detection; None = skip
 
+    @field_validator("project_id")
+    @classmethod
+    def check_project_id(cls, v: str) -> str:
+        return _validate_project_id(v)
+
 
 class StartRequest(BaseModel):
     project_id: str
@@ -47,6 +61,11 @@ class SearchRequest(BaseModel):
     top_k: int = 10
     min_score: float = 0.35
 
+    @field_validator("project_id")
+    @classmethod
+    def check_project_id(cls, v: str) -> str:
+        return _validate_project_id(v)
+
 
 class SearchResult(BaseModel):
     file_path: str
@@ -61,6 +80,11 @@ class SearchResponse(BaseModel):
 
 class ClearRequest(BaseModel):
     project_id: str
+
+    @field_validator("project_id")
+    @classmethod
+    def check_project_id(cls, v: str) -> str:
+        return _validate_project_id(v)
 
 
 class IndexerProgressJob(BaseModel):
