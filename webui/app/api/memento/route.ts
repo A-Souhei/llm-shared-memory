@@ -26,3 +26,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  const project_id = req.nextUrl.searchParams.get('project_id') ?? ''
+  try {
+    const res = await fetch(`${API}/biblion/memento/clear?project_id=${encodeURIComponent(project_id)}`, { method: 'DELETE' })
+    return NextResponse.json(await res.json(), { status: res.status })
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
+}

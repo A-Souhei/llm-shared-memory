@@ -199,6 +199,19 @@ export default function Home() {
     }
   }
 
+  const clearMementos = async (projectId: string) => {
+    const url = new URL('/api/memento', window.location.origin)
+    url.searchParams.set('project_id', projectId)
+    const res = await fetch(url.toString(), { method: 'DELETE' })
+    const data = await res.json()
+    if (res.ok) {
+      addToast(`Deleted ${data.deleted} memento(s)`, 'success')
+      fetchMementos(projectId)
+    } else {
+      addToast('Failed to clear mementos', 'error')
+    }
+  }
+
   const clearIndex = async (projectId: string) => {
     const res = await fetch('/api/indexer/clear', {
       method: 'DELETE',
@@ -306,6 +319,7 @@ export default function Home() {
             selectedProject={mementoProject}
             onSelectProject={id => { setMementoProject(id); fetchMementos(id) }}
             onDelete={id => askConfirm('Delete this memento?', () => deleteMemento(id))}
+            onClearAll={id => askConfirm(`Clear all mementos for "${id}"?`, () => clearMementos(id))}
             onRefresh={() => fetchMementos(mementoProject)}
           />
         )}
@@ -553,6 +567,7 @@ function MementoTab({
   selectedProject,
   onSelectProject,
   onDelete,
+  onClearAll,
   onRefresh,
 }: {
   projects: ProjectData[]
@@ -561,6 +576,7 @@ function MementoTab({
   selectedProject: string
   onSelectProject: (id: string) => void
   onDelete: (id: string) => void
+  onClearAll: (id: string) => void
   onRefresh: () => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -617,7 +633,15 @@ function MementoTab({
 
       {mementos.length > 0 && (
         <div className="space-y-3">
-          <div className="text-xs text-gray-400">{mementos.length} memento{mementos.length !== 1 ? 's' : ''}</div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-gray-400">{mementos.length} memento{mementos.length !== 1 ? 's' : ''}</div>
+            <button
+              onClick={() => onClearAll(selectedProject)}
+              className="px-2.5 py-1 text-xs border border-red-200 text-red-600 rounded-md hover:bg-red-50 transition-colors"
+            >
+              Clear all
+            </button>
+          </div>
           {mementos.map(m => {
             const open = expanded.has(m.id)
             const firstLine = m.content.split('\n')[0].replace(/^#+\s*/, '')

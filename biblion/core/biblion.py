@@ -253,6 +253,18 @@ async def list_mementos(project_id: str) -> list[MementoEntry]:
 
 
 # ---------------------------------------------------------------------------
+# Memento — clear all for a project
+# ---------------------------------------------------------------------------
+
+async def clear_mementos(project_id: str) -> int:
+    hits = await storage.scroll_all(project_id=project_id)
+    ids = [h["payload"]["id"] for h in hits if h.get("payload", {}).get("type") == "memento"]
+    for entry_id in ids:
+        await storage.delete_by_id(entry_id)
+    return len(ids)
+
+
+# ---------------------------------------------------------------------------
 # Delete entry
 # ---------------------------------------------------------------------------
 

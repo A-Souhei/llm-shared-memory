@@ -57,3 +57,10 @@ async def save_memento(req: MementoSaveRequest) -> WriteResponse:
 async def list_mementos(project_id: str = Query(...)) -> list[MementoEntry]:
     """List mementos for a project, newest first."""
     return await core.list_mementos(project_id)
+
+
+@router.delete("/memento/clear")
+async def clear_mementos(project_id: str = Query(...)) -> dict[str, int]:
+    """Delete all mementos for a project."""
+    deleted = await core.clear_mementos(project_id)
+    return {"deleted": deleted}

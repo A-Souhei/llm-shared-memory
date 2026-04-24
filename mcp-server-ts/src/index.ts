@@ -292,6 +292,19 @@ server.tool(
   }
 );
 
+server.tool(
+  "memento_clear",
+  "Delete all mementos for a project. Use with caution — this is irreversible.",
+  {
+    project_id: z.string().describe("Project whose mementos to delete (required)."),
+  },
+  async ({ project_id }) => {
+    const data = await fetch(`${BASE_URL}/biblion/memento/clear?project_id=${encodeURIComponent(project_id)}`, { method: "DELETE" });
+    const json = await data.json() as Record<string, unknown>;
+    return ok(`Cleared ${json["deleted"] ?? 0} memento(s) for project=${project_id}.`);
+  }
+);
+
 // ─── Indexer tools ────────────────────────────────────────────────────────────
 
 server.tool(
