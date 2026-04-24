@@ -77,6 +77,13 @@ interface IndexerResult {
 
 interface IndexingJob { project_id: string; processed: number; total: number }
 
+interface MementoEntry {
+  id: string
+  content: string
+  project_id: string
+  created_at: string
+}
+
 interface Toast { id: number; message: string; kind: 'success' | 'error' }
 interface ConfirmState { message: string; onConfirm: () => Promise<void> }
 
@@ -87,12 +94,13 @@ const TYPE_COLORS: Record<string, string> = {
   api:        'bg-green-100 text-green-800',
   config:     'bg-yellow-100 text-yellow-800',
   workflow:   'bg-pink-100 text-pink-800',
+  memento:    'bg-amber-100 text-amber-800',
 }
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [tab, setTab] = useState<'projects' | 'bridge' | 'search'>('projects')
+  const [tab, setTab] = useState<'projects' | 'bridge' | 'search' | 'memento'>('projects')
   const [status, setStatus] = useState<StatusData | null>(null)
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [bridges, setBridges] = useState<BridgeInfo[]>([])
@@ -101,6 +109,9 @@ export default function Home() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [indexingJobs, setIndexingJobs] = useState<IndexingJob[]>([])
+  const [mementoProject, setMementoProject] = useState('')
+  const [mementos, setMementos] = useState<MementoEntry[]>([])
+  const [mementosLoading, setMementosLoading] = useState(false)
   const toastId = useRef(0)
   const prevJobCount = useRef(0)
 
@@ -168,6 +179,26 @@ export default function Home() {
     }
   }
 
+  const fetchMementos = useCallback(async (projectId: string) => {
+    setMementosLoading(true)
+    try {
+      const res = await fetch(`/api/memento?project_id=${encodeURIComponent(projectId)}`)
+      if (res.ok) setMementos(await res.json())
+    } finally {
+      setMementosLoading(false)
+    }
+  }, [])
+
+  const deleteMemento = async (id: string) => {
+    const res = await fetch(`/api/memento/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      addToast('Memento deleted', 'success')
+      fetchMementos(mementoProject)
+    } else {
+      addToast('Failed to delete memento', 'error')
+    }
+  }
+
   const clearIndex = async (projectId: string) => {
     const res = await fetch('/api/indexer/clear', {
       method: 'DELETE',
@@ -215,7 +246,7 @@ export default function Home() {
 
       {/* Tabs */}
       <nav className="bg-white border-b px-6 flex">
-        {(['projects', 'bridge', 'search'] as const).map(t => (
+        {(['projects', 'bridge', 'search', 'memento'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -267,6 +298,17 @@ export default function Home() {
           />
         )}
         {tab === 'search' && <SearchTab projects={projects} addToast={addToast} />}
+        {tab === 'memento' && (
+          <MementoTab
+            projects={projects}
+            mementos={mementos}
+            loading={mementosLoading}
+            selectedProject={mementoProject}
+            onSelectProject={id => { setMementoProject(id); fetchMementos(id) }}
+            onDelete={id => askConfirm('Delete this memento?', () => deleteMemento(id))}
+            onRefresh={() => fetchMementos(mementoProject)}
+          />
+        )}
       </main>
 
       {/* Confirm modal */}
@@ -496,6 +538,117 @@ function ProjectsTab({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── MementoTab ─────────────────────────────────────────────────────────────────
+
+function MementoTab({
+  projects,
+  mementos,
+  loading,
+  selectedProject,
+  onSelectProject,
+  onDelete,
+  onRefresh,
+}: {
+  projects: ProjectData[]
+  mementos: MementoEntry[]
+  loading: boolean
+  selectedProject: string
+  onSelectProject: (id: string) => void
+  onDelete: (id: string) => void
+  onRefresh: () => void
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const toggle = (id: string) =>
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
+  const formatDate = (iso: string) => {
+    if (!iso) return '—'
+    try { return new Date(iso).toLocaleString() } catch { return iso }
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex items-center gap-3 mb-6">
+        <label className="text-sm text-gray-500 shrink-0">Project</label>
+        <select
+          value={selectedProject}
+          onChange={e => onSelectProject(e.target.value)}
+          className="border rounded-md px-2 py-1.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">— select a project —</option>
+          {projects.filter(p => p.projectId !== '').map(p => (
+            <option key={p.projectId} value={p.projectId}>{p.projectId}</option>
+          ))}
+        </select>
+        {selectedProject && (
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-40 font-medium ml-auto"
+          >
+            {loading ? 'Loading…' : '↻ Refresh'}
+          </button>
+        )}
+      </div>
+
+      {!selectedProject && (
+        <div className="bg-white rounded-xl border p-10 text-center text-gray-400 text-sm">
+          Select a project to view its mementos.
+        </div>
+      )}
+
+      {selectedProject && !loading && mementos.length === 0 && (
+        <div className="bg-white rounded-xl border p-10 text-center text-gray-400 text-sm">
+          No mementos for <span className="font-mono">{selectedProject}</span> yet.
+          <div className="mt-2 text-xs">Use <code className="bg-gray-100 px-1 rounded">memento_save</code> from the MCP to save a session.</div>
+        </div>
+      )}
+
+      {mementos.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-xs text-gray-400">{mementos.length} memento{mementos.length !== 1 ? 's' : ''}</div>
+          {mementos.map(m => {
+            const open = expanded.has(m.id)
+            const firstLine = m.content.split('\n')[0].replace(/^#+\s*/, '')
+            return (
+              <div key={m.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div
+                  className="px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-50"
+                  onClick={() => toggle(m.id)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-800 truncate">{firstLine || m.id.slice(0, 8)}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{formatDate(m.created_at)}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={e => { e.stopPropagation(); onDelete(m.id) }}
+                      className="px-2 py-1 text-xs border border-red-200 text-red-500 rounded hover:bg-red-50 transition-colors"
+                    >
+                      Delete
+                    </button>
+                    <span className="text-gray-400 text-xs">{open ? '▲' : '▼'}</span>
+                  </div>
+                </div>
+                {open && (
+                  <pre className="px-4 pb-4 text-xs text-gray-700 whitespace-pre-wrap font-mono bg-gray-50 border-t leading-relaxed overflow-x-auto">
+                    {m.content}
+                  </pre>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

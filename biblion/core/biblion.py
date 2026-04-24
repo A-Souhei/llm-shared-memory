@@ -16,6 +16,8 @@ from biblion.models import (
     Status,
     StatusReady,
     StatusDisabled,
+    MementoSaveRequest,
+    MementoEntry,
 )
 from biblion.core.sanitize import sanitize
 from biblion.core.canonicalize import canonicalize
@@ -198,6 +200,56 @@ async def list_entries(
         )
 
     return entries
+
+
+# ---------------------------------------------------------------------------
+# Memento — save
+# ---------------------------------------------------------------------------
+
+async def save_memento(req: MementoSaveRequest) -> WriteResponse:
+    if not _status["ready"]:
+        raise HTTPException(status_code=503, detail="biblion disabled")
+    if not req.project_id.strip():
+        raise HTTPException(status_code=400, detail="project_id is required for mementos")
+
+    now = datetime.now(timezone.utc).isoformat()
+    new_id = str(uuid4())
+    vector = await embedding.embed(req.content[:500])
+
+    payload = {
+        "id": new_id,
+        "type": "memento",
+        "content": req.content,
+        "tags": [],
+        "project_id": req.project_id,
+        "branch": "",
+        "session_id": "",
+        "quality": 0.7,
+        "used_count": 0,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await storage.upsert([{"id": new_id, "vector": vector, "payload": payload}])
+    return WriteResponse(success=True, id=new_id)
+
+
+# ---------------------------------------------------------------------------
+# Memento — list (newest first)
+# ---------------------------------------------------------------------------
+
+async def list_mementos(project_id: str) -> list[MementoEntry]:
+    hits = await storage.scroll_all(project_id=project_id)
+    mementos = [h for h in hits if h.get("payload", {}).get("type") == "memento"]
+    mementos.sort(key=lambda h: h["payload"].get("created_at", ""), reverse=True)
+    return [
+        MementoEntry(
+            id=h["payload"]["id"],
+            content=h["payload"]["content"],
+            project_id=h["payload"]["project_id"],
+            created_at=h["payload"].get("created_at", ""),
+        )
+        for h in mementos
+    ]
 
 
 # ---------------------------------------------------------------------------
