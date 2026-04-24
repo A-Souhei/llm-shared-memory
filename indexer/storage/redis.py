@@ -214,32 +214,42 @@ async def clear_progress(project_id: str) -> None:
 async def list_active_progress() -> list[dict]:
     r = _get_client()
     cursor = 0
-    result = []
+    keys: list = []
     pattern = f"{REDIS_KEY_PREFIX}_*:progress"
     while True:
         cursor, batch = await r.scan(cursor, match=pattern, count=100)
-        for key in batch:
-            k = key.decode() if isinstance(key, bytes) else key
-            data = await r.hgetall(key)
-            if not data:
-                continue
-            project_id = k[len(REDIS_KEY_PREFIX) + 1:].rsplit(":progress", 1)[0]
-            decoded = {
-                (dk.decode() if isinstance(dk, bytes) else dk):
-                (dv.decode() if isinstance(dv, bytes) else dv)
-                for dk, dv in data.items()
-            }
-            try:
-                processed = int(decoded.get("processed", 0))
-            except (TypeError, ValueError):
-                processed = 0
-            try:
-                total = int(decoded.get("total", 0))
-            except (TypeError, ValueError):
-                total = 0
-            result.append({"project_id": project_id, "processed": processed, "total": total})
+        keys.extend(batch)
         if cursor == 0:
             break
+
+    if not keys:
+        return []
+
+    pipe = r.pipeline()
+    for key in keys:
+        pipe.hgetall(key)
+    all_data = await pipe.execute()
+
+    result = []
+    for key, data in zip(keys, all_data):
+        if not data:
+            continue
+        k = key.decode() if isinstance(key, bytes) else key
+        project_id = k[len(REDIS_KEY_PREFIX) + 1:].rsplit(":progress", 1)[0]
+        decoded = {
+            (dk.decode() if isinstance(dk, bytes) else dk):
+            (dv.decode() if isinstance(dv, bytes) else dv)
+            for dk, dv in data.items()
+        }
+        try:
+            processed = int(decoded.get("processed", 0))
+        except (TypeError, ValueError):
+            processed = 0
+        try:
+            total = int(decoded.get("total", 0))
+        except (TypeError, ValueError):
+            total = 0
+        result.append({"project_id": project_id, "processed": processed, "total": total})
     return result
 
 

@@ -372,16 +372,19 @@ server.tool(
     }
 
     const files: { path: string; content: string; mtime: number }[] = [];
-    await Promise.all(relPaths.map(async rel => {
-      if (!EXTENSIONS.has(path.extname(rel).toLowerCase())) return;
-      const abs = path.join(directory, rel);
-      try {
-        const st = await stat(abs);
-        if (st.size > MAX_BYTES) return;
-        const content = await readFile(abs, "utf8");
-        files.push({ path: rel, content, mtime: st.mtimeMs });
-      } catch { /* skip unreadable */ }
-    }));
+    const CONCURRENCY = 20;
+    for (let i = 0; i < relPaths.length; i += CONCURRENCY) {
+      await Promise.all(relPaths.slice(i, i + CONCURRENCY).map(async rel => {
+        if (!EXTENSIONS.has(path.extname(rel).toLowerCase())) return;
+        const abs = path.join(directory, rel);
+        try {
+          const st = await stat(abs);
+          if (st.size > MAX_BYTES) return;
+          const content = await readFile(abs, "utf8");
+          files.push({ path: rel, content, mtime: st.mtimeMs });
+        } catch { /* skip unreadable */ }
+      }));
+    }
 
     if (!files.length) return ok(`No indexable files found in ${directory}.`);
 

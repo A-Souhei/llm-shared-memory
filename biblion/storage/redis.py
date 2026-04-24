@@ -225,8 +225,8 @@ async def delete_by_id(point_id: str) -> None:
     await r.delete(_point_key(point_id))
 
 
-async def delete_by_project(project_id: str) -> None:
-    """Delete all points belonging to a project."""
+async def delete_by_project(project_id: str) -> int:
+    """Delete all points belonging to a project. Returns number of keys deleted."""
     r = _get_client()
     q = (
         Query(f"@project_id:{{{_escape_tag(project_id)}}}")
@@ -240,8 +240,10 @@ async def delete_by_project(project_id: str) -> None:
         keys = [doc.id for doc in results.docs]
         if keys:
             await r.delete(*keys)
+        return len(keys)
     except Exception as exc:
         logger.warning("delete_by_project failed: %s", exc)
+        return 0
 
 
 async def delete_all() -> None:

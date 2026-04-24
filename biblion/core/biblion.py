@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -28,6 +29,9 @@ from biblion.core.scoring import rank
 # ---------------------------------------------------------------------------
 
 _status: dict = {"ready": False, "reason": "not initialized"}
+_init_lock = asyncio.Lock()
+_last_init_attempt: float = 0.0
+_INIT_COOLDOWN = 10.0
 
 
 def set_status(ready: bool, reason: str = "") -> None:
@@ -36,8 +40,14 @@ def set_status(ready: bool, reason: str = "") -> None:
 
 
 async def get_status() -> Status:
+    global _last_init_attempt
     if not _status["ready"]:
-        await initialize()
+        now = time.monotonic()
+        if now - _last_init_attempt >= _INIT_COOLDOWN:
+            async with _init_lock:
+                if not _status["ready"] and time.monotonic() - _last_init_attempt >= _INIT_COOLDOWN:
+                    _last_init_attempt = time.monotonic()
+                    await initialize()
     if _status["ready"]:
         try:
             entry_count = await storage.count()
@@ -278,10 +288,7 @@ async def delete_entry(entry_id: str) -> bool:
 
 async def clear(project_id: str | None = None) -> int:
     if project_id:
-        before = await storage.count()
-        await storage.delete_by_project(project_id)
-        after = await storage.count()
-        return max(0, before - after)
+        return await storage.delete_by_project(project_id)
     else:
         await storage.delete_all()
         return 0
