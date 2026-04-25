@@ -210,7 +210,7 @@ server.tool(
     for (const r of results) {
       lines.push(`\n[${r["type"]}] score=${(r["score"] as number).toFixed(3)}  project=${r["project_id"] || "-"}  tags=${(r["tags"] as string[] ?? []).join(",")}`);
       const c = r["content"] as string;
-      lines.push(c.length > 800 ? c.slice(0, 800) + "…" : c);
+      lines.push(c);
     }
     return ok(lines.join("\n"));
   }
