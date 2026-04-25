@@ -62,6 +62,16 @@ Multi-agent coordination over Redis pub/sub.
 | POST | /bridge/share-context | Push a finding/result to shared context |
 | GET | /bridge/context | Read recent shared context entries |
 
+### Memento (`/biblion/memento`)
+
+Session snapshots, scoped per project, stored without deduplication.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | /biblion/memento/save | Save a session memento |
+| GET | /biblion/memento/list | List mementos for a project (newest first) |
+| DELETE | /biblion/memento/clear | Delete all mementos for a project |
+
 ### Code Indexer (`/indexer`)
 
 Semantic search over indexed source code.
@@ -74,6 +84,18 @@ Semantic search over indexed source code.
 | POST | /indexer/ingest | Ingest files into the code index |
 | POST | /indexer/search | Semantic search over indexed code |
 | DELETE | /indexer/clear | Clear index for a project |
+
+## Memento
+
+Mementos are session snapshots an agent saves before context compaction. They capture process — commands run, workflow steps, decisions, what to avoid — so the next session can pick up where the last one left off.
+
+MCP tools:
+
+| Tool | Description |
+|---|---|
+| `memento_save` | Save a distilled session to the knowledge base |
+| `memento_load` | Load recent mementos for a project (newest first) |
+| `memento_clear` | Delete all mementos for a project (irreversible) |
 
 ## Entry Types
 
